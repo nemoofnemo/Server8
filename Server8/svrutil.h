@@ -266,12 +266,12 @@ public:
 	//must released by delete key word or calling destructor.
 	static CriticalSection * createCriticalSection(DWORD dwSpinCount = 0x00000400){
 		CriticalSection * pcs = new CriticalSection();
-		if (pcs->init(dwSpinCount) == false){
-			delete pcs;
-			return NULL;
+		if (pcs->init(dwSpinCount)){
+			return pcs;
 		}
 		else{
-			return pcs;
+			delete pcs;
+			return NULL;
 		}
 	}
 };
