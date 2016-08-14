@@ -16,7 +16,6 @@
 #include <list>
 #include <array>
 #include <vector>
-#include <hash_map>
 #include <map>
 
 #pragma comment(lib, "ws2_32.lib") 
