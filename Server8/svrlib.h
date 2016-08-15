@@ -22,8 +22,15 @@
 
 //debug mode
 #define DEBUG
+
+//platform
 #define WIN_SVR
+
+//interface
 #define Interface struct
+
+//release a pointer
+#define RELEASE(X) {if(!(X)){delete (X);(X) = NULL;}}
 
 //class Object should be base class of every other class.
 class Object {
@@ -32,7 +39,9 @@ public:
 
 	}
 
-	virtual ~Object() = 0;
+	virtual ~Object() {
+
+	}
 };
 
 #endif // SVRLIB_H_

@@ -4,7 +4,7 @@
 
 using std::string;
 
-namespace svrutil{
+namespace svrutil {
 	class Timer;
 	class LogModule;
 	class CriticalSection;
@@ -15,7 +15,7 @@ namespace svrutil{
 #pragma warning(disable: 4244)
 //定时器
 //支持精度为毫秒级.错误代码0x502
-class svrutil::Timer : public Object{
+class svrutil::Timer : public Object {
 private:
 	static const int		TIMER_MODULE_ERROR = 0x502;
 	LARGE_INTEGER	large_interger;
@@ -23,43 +23,43 @@ private:
 	double freq;
 
 public:
-	Timer(){
-		if ( ! QueryPerformanceFrequency(&large_interger)){
+	Timer() {
+		if (!QueryPerformanceFrequency(&large_interger)) {
 			exit(TIMER_MODULE_ERROR);
 		}
 
 		freq = large_interger.QuadPart;
 	}
 
-	~Timer(){
+	~Timer() {
 		//...
 	}
 
 	//start timer
-	void start(void){
-		if ( ! QueryPerformanceCounter(&time)){
+	void start(void) {
+		if (!QueryPerformanceCounter(&time)) {
 			exit(TIMER_MODULE_ERROR);
 		}
 	}
 
 	//stop timer and return internal time in milliseconds
-	unsigned long long stop(void){
-		if ( ! QueryPerformanceCounter(&large_interger)){
+	unsigned long long stop(void) {
+		if (!QueryPerformanceCounter(&large_interger)) {
 			exit(TIMER_MODULE_ERROR);
 		}
 		return unsigned long long((large_interger.QuadPart - time.QuadPart) * 1000 / freq);
 	}
 
-	double stopInDouble(void){
-		if (!QueryPerformanceCounter(&large_interger)){
+	double stopInDouble(void) {
+		if (!QueryPerformanceCounter(&large_interger)) {
 			exit(TIMER_MODULE_ERROR);
 		}
 		return ((large_interger.QuadPart - time.QuadPart) * 1000 / freq);
 	}
-	
+
 	//todo
 	//wait for N milliseconds
-	static void wait(const unsigned long long ago){
+	static void wait(const unsigned long long ago) {
 		Sleep(ago);
 	}
 };
@@ -71,8 +71,8 @@ public:
 //错误代码0x501
 class svrutil::LogModule : public Object {
 private:
-	static const int	 DEFAULT_BUFFER_SIZE	= 0x2000;
-	static const int	 LOG_MODULE_ERROR		= 0x501;
+	static const int	 DEFAULT_BUFFER_SIZE = 0x2000;
+	static const int	 LOG_MODULE_ERROR = 0x501;
 
 	char *		buffer;
 	int			index;
@@ -82,7 +82,7 @@ private:
 	CRITICAL_SECTION lock;
 
 	//not available
-	LogModule(){
+	LogModule() {
 
 	}
 
@@ -100,8 +100,8 @@ public:
 
 	//构造函数file的实参为"console"时,向控制台输出日志
 	//否则写入指定文件,file为相对或绝对路径
-	LogModule(const string & file, const int & bufSize = DEFAULT_BUFFER_SIZE, const string & mode = string("a")){
-		if (bufSize < 0){
+	LogModule(const string & file, const int & bufSize = DEFAULT_BUFFER_SIZE, const string & mode = string("a")) {
+		if (bufSize < 0) {
 			exit(LOG_MODULE_ERROR);
 		}
 
@@ -111,24 +111,24 @@ public:
 		buffer = NULL;
 		//pFile = NULL;
 
-		if (file == "console"){
+		if (file == "console") {
 			pFile = stdout;
 		}
-		else if ( 0 != ::fopen_s(&pFile, file.c_str(), mode.c_str()) ){
+		else if (0 != ::fopen_s(&pFile, file.c_str(), mode.c_str())) {
 			exit(LOG_MODULE_ERROR);
 		}
-		else{			
+		else {
 			buffer = new char[limit];
 		}
 
-		if ( ! InitializeCriticalSectionAndSpinCount(&lock, 0x1000)){
+		if (!InitializeCriticalSectionAndSpinCount(&lock, 0x1000)) {
 			exit(LOG_MODULE_ERROR);
 		}
 	}
 
-	~LogModule(){
+	~LogModule() {
 		flush();
-		if (filePath != "console"){
+		if (filePath != "console") {
 			fclose(pFile);
 			delete[] buffer;
 		}
@@ -137,14 +137,14 @@ public:
 
 	//向缓冲区写入数据.如果缓冲区已满,则写入指定文件中.
 	//当路径为"console"时,不缓冲,直接输出到控制台.
-	int write(const char * str, ... ){
+	int write(const char * str, ...) {
 		int num = 0;
 		char timeStamp[32] = "";//char timeStamp[] = "[YYYY/MM/DD-HH:MM:SS:mmmm]: ";
 
 		SYSTEMTIME systemTime;
 		GetSystemTime(&systemTime);
 		sprintf_s<32>(timeStamp, "[%04d/%02d/%02d %02d:%02d:%02d:%04d]: ", systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond, systemTime.wMilliseconds);
-		
+
 		string format(timeStamp);
 		format += str;
 		format += '\n';
@@ -152,17 +152,17 @@ public:
 		va_list vl;
 		va_start(vl, str);
 
-		if (filePath == "console"){
+		if (filePath == "console") {
 			num = ::vfprintf_s(stdout, format.c_str(), vl);
 		}
-		else{
+		else {
 			int len = format.size();
-			if (len >= limit){
+			if (len >= limit) {
 				flush();
 				num = ::vfprintf(pFile, format.c_str(), vl);
 			}
-			else{
-				if (index + len >= limit){
+			else {
+				if (index + len >= limit) {
 					flush();
 				}
 				EnterCriticalSection(&lock);
@@ -177,8 +177,8 @@ public:
 	}
 
 	//提交缓冲区内容到物理存储器
-	void flush(void){
-		if (filePath != "console"){
+	void flush(void) {
+		if (filePath != "console") {
 			EnterCriticalSection(&lock);
 			::fwrite(buffer, index, 1, pFile);
 			::fflush(pFile);
@@ -196,31 +196,31 @@ private:
 	int	refCount;
 	bool lockFlag;
 
-	CriticalSection(){
+	CriticalSection() {
 
 	}
 
-CriticalSection(const CriticalSection &) {
+	CriticalSection(const CriticalSection &) {
 
-}
-
-void operator=(const CriticalSection &) {
-
-}
-
-bool init(DWORD dwSpinCount) {
-	bool ret = InitializeCriticalSectionAndSpinCount(&lock, dwSpinCount);
-	this->refCount = 0;
-
-	if (ret) {
-		lockFlag = true;
-	}
-	else {
-		lockFlag = false;
 	}
 
-	return ret;
-}
+	void operator=(const CriticalSection &) {
+
+	}
+
+	bool init(DWORD dwSpinCount) {
+		bool ret = InitializeCriticalSectionAndSpinCount(&lock, dwSpinCount);
+		this->refCount = 0;
+
+		if (ret) {
+			lockFlag = true;
+		}
+		else {
+			lockFlag = false;
+		}
+
+		return ret;
+	}
 
 public:
 	~CriticalSection() {
@@ -276,7 +276,7 @@ public:
 	}
 };
 
-//Slim reader/writer (SRW) locks enable the threads of a single process to access shared 
+//Slim reader/writer (SRW) locks
 class svrutil::SRWLock : public Object {
 private:
 	SRWLOCK lock;

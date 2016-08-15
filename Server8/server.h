@@ -218,7 +218,8 @@ private:
 	svr::Status			status;
 	svr::Priority		priority;
 
-	CRITICAL_SECTION		sessionLock;
+	svrutil::CriticalSection* sessionLock;
+	//CRITICAL_SECTION		sessionLock;
 private:
 	//default constructor is not available
 	Session(){
@@ -246,7 +247,7 @@ public:
 		eventQueue.tail = 0;
 		eventQueue.eventArr = new Event* [eventQueue.maxSize];
 
-		InitializeCriticalSectionAndSpinCount(&sessionLock, 0x00000400);
+		sessionLock = svrutil::CriticalSection::create();
 	}
 
 	~Session(){
@@ -324,15 +325,4 @@ public:
 
 	}
 
-	void enterCriticalSection(void){
-		::EnterCriticalSection(&sessionLock);
-	}
-
-	void leaveCriticalSection(void){
-		::LeaveCriticalSection(&sessionLock);
-	}
-
-	bool tryEnterCriticalSection(void){
-		::TryEnterCriticalSection(&sessionLock);
-	}
 };
