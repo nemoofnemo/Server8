@@ -2,7 +2,7 @@
 #define SVRUTIL
 #include "svrlib.h"
 
-using std::string;
+using std::wstring;
 
 namespace svrutil {
 	class Timer;
@@ -69,6 +69,126 @@ public:
 //构造函数file的实参为"console"时,向控制台输出日志
 //否则写入指定文件,file为相对或绝对路径
 //错误代码501
+#ifndef WIN_SVR
+class svrutil::LogModule : public Object {
+private:
+	static const int	 DEFAULT_BUFFER_SIZE = 0x2000;
+	static const int	 LOG_MODULE_ERROR = 501;
+
+	WCHAR *	buffer;
+	int			index;
+	int			limit;
+	wstring		filePath;
+	FILE *		pFile;
+	CRITICAL_SECTION lock;
+
+	//not available
+	LogModule() {
+
+	}
+
+	//not available
+	LogModule(const LogModule & lm) {
+
+	}
+
+	//not available
+	void operator=(const LogModule &) {
+
+	}
+
+public:
+
+	//构造函数file的实参为"console"时,向控制台输出日志
+	//否则写入指定文件,file为相对或绝对路径
+	LogModule(const wstring & file, const int & bufSize = DEFAULT_BUFFER_SIZE, const wstring & mode = wstring(L"a")) {
+		if (bufSize < 0) {
+			exit(LOG_MODULE_ERROR);
+		}
+
+		filePath = file;
+		index = 0;
+		limit = bufSize;
+		buffer = NULL;
+		//pFile = NULL;
+
+		if (file == L"console") {
+			pFile = stdout;
+		}
+		else if (0 != ::_wfopen_s(&pFile, file.c_str(), mode.c_str())) {
+			exit(LOG_MODULE_ERROR);
+		}
+		else {
+			buffer = new WCHAR[limit];
+		}
+
+		if (!InitializeCriticalSectionAndSpinCount(&lock, 0x1000)) {
+			exit(LOG_MODULE_ERROR);
+		}
+	}
+
+	~LogModule() {
+		flush();
+		if (filePath != L"console") {
+			fclose(pFile);
+			delete[] buffer;
+		}
+		DeleteCriticalSection(&lock);
+	}
+
+	//向缓冲区写入数据.如果缓冲区已满,则写入指定文件中.
+	//当路径为"console"时,不缓冲,直接输出到控制台.
+	int write(const WCHAR * str, ...) {
+		int num = 0;
+		WCHAR timeStamp[32] = L"";//char timeStamp[] = "[YYYY/MM/DD-HH:MM:SS:mmmm]: ";
+
+		SYSTEMTIME systemTime;
+		GetSystemTime(&systemTime);
+		swprintf_s<32>(timeStamp, L"[%04d/%02d/%02d %02d:%02d:%02d:%04d]: ", systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond, systemTime.wMilliseconds);
+
+		wstring format(timeStamp);
+		format += str;
+		format += L"\n";
+
+		va_list vl;
+		va_start(vl, str);
+
+		if (filePath == L"console") {
+			num = ::vfwprintf_s(stdout, format.c_str(), vl);
+		}
+		else {
+			int len = format.size();
+			if (len >= limit) {
+				flush();
+				num = ::vfwprintf(pFile, format.c_str(), vl);
+			}
+			else {
+				if (index + len >= limit) {
+					flush();
+				}
+				EnterCriticalSection(&lock);
+				num = ::vswprintf_s(buffer + index, limit - index, format.c_str(), vl);
+				index += num * 2;
+				LeaveCriticalSection(&lock);
+			}
+		}
+		va_end(vl);
+
+		return num;
+	}
+
+	//提交缓冲区内容到物理存储器
+	void flush(void) {
+		if (filePath != L"console") {
+			EnterCriticalSection(&lock);
+			::fwrite(buffer, index, 1, pFile);
+			::fflush(pFile);
+			index = 0;
+			LeaveCriticalSection(&lock);
+		}
+	}
+};
+#else
 class svrutil::LogModule : public Object {
 private:
 	static const int	 DEFAULT_BUFFER_SIZE = 0x2000;
@@ -188,6 +308,8 @@ public:
 	}
 };
 
+#endif
+
 //critical section
 class svrutil::CriticalSection : public Object {
 private:
@@ -209,7 +331,7 @@ private:
 	}
 
 	bool init(DWORD dwSpinCount) {
-		bool ret = InitializeCriticalSectionAndSpinCount(&lock, dwSpinCount);
+		BOOL ret = InitializeCriticalSectionAndSpinCount(&lock, dwSpinCount);
 		this->refCount = 0;
 
 		if (ret) {
@@ -250,7 +372,7 @@ public:
 	}
 
 	bool tryEnter(void) {
-		bool ret = ::TryEnterCriticalSection(&lock);
+		BOOL ret = ::TryEnterCriticalSection(&lock);
 		if (!ret) {
 			return false;
 		}

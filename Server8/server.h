@@ -140,7 +140,10 @@ public:
 	}
 
 	//assign operator
-	Event operator= (const Event & event) {
+	Event & operator= (const Event & event) {
+		if (pData != NULL && length > 0)
+			delete[] pData;
+
 		status = event.status;
 		level = event.level;
 		priority = event.priority;
@@ -154,6 +157,8 @@ public:
 		else {
 			pData = event.pData;
 		}
+
+		return *this;
 	}
 
 	~Event(){
@@ -188,6 +193,13 @@ public:
 		}
 	}
 
+	void release(void) {
+		if (pData != NULL && length > 0)
+			delete[] pData;
+		pData = NULL;
+		length = 0;
+	}
+
 	void * getData(void){
 		return pData;
 	}
@@ -210,9 +222,9 @@ public:
 
 	void show(void){
 		if (length > 0)
-			Log.write("[Event]:\ndata:%s\nlength=%d, status=%d, level=%d, priority=%d", pData, length, status, level, priority);
+			Log.write(L"[Event]:\ndata:%s\nlength=%d, status=%d, level=%d, priority=%d", pData, length, status, level, priority);
 		else
-			Log.write("[Event]:\ndata(pointer):0x%p\nlength=%d, status=%d, level=%d, priority=%d", pData, length, status, level, priority);
+			Log.write(L"[Event]:\ndata(pointer):0x%p\nlength=%d, status=%d, level=%d, priority=%d", pData, length, status, level, priority);
 	}
 };
 
@@ -246,7 +258,6 @@ private:
 	svr::Status			status;
 	svr::Priority		priority;
 
-	//svrutil::CriticalSection* sessionLock;
 	svrutil::SRWLock sessionLock;
 private:
 	//default constructor is not available
@@ -268,7 +279,7 @@ public:
 	Session(const string &	key, int	 maxSize = svr::ConstVar::DEFAULT_QUEUE_SIZE, svr::Status status = svr::Status::STATUS_READY, svr::Level level = svr::Level::LEVEL_USER, svr::Priority pri = svr::Priority::PRI_MEDIUM) : 
 		key(key), status(status), level(level), priority(pri)
 	{
-		if (maxSize < 0) {
+		if (maxSize < DEFAULT_QUEUE_SIZE) {
 			eventQueue.maxSize = svr::ConstVar::DEFAULT_QUEUE_SIZE;
 		}
 		else {
@@ -276,8 +287,8 @@ public:
 		}
 
 		eventQueue.size = 0;
-		eventQueue.head = maxSize - 1;
-		eventQueue.tail = 0;
+		eventQueue.tail = eventQueue.maxSize / 2;
+		eventQueue.head = eventQueue.tail - 1;
 	}
 
 	~Session(){
@@ -331,37 +342,56 @@ public:
 
 	bool pushBack(const Event & event){
 		bool ret = false;
-		sessionLock.AcquireExclusive();
-		if (!eventQueue.isFull()) {
-			eventQueue.eventArr[eventQueue.tail++] = event;
-			eventQueue.tail %= eventQueue.maxSize;
-			eventQueue.size += 1;
 
+		sessionLock.AcquireExclusive();
+		if (! svr::Status::STATUS_HALT == status ) {
+			if (!eventQueue.isFull()) {
+				eventQueue.eventArr[eventQueue.tail] = event;
+				eventQueue.size += 1;
+				eventQueue.tail++;
+				eventQueue.tail %= eventQueue.maxSize;
+				ret = true;
+			}
 		}
 		sessionLock.ReleaseExclusive();
+
 		return ret;
 	}
 
-	bool pushFront(){
-		if (status == STATUS_READY || status == STATUS_RUNNING){
+	bool pushFront(const Event & event){
+		bool ret = false;
 
+		sessionLock.AcquireExclusive();
+		if (!svr::Status::STATUS_HALT == status) {
+			if (!eventQueue.isFull()) {
+				eventQueue.head == 0 ? 
+					eventQueue.head = eventQueue.maxSize - 1 : 
+					eventQueue.head--;
+
+				eventQueue.eventArr[eventQueue.head] = event;
+				eventQueue.size += 1;
+				ret = true;
+			}
 		}
-		else{
-			return false;
-		}
+		sessionLock.ReleaseExclusive();
+
+		return ret;
 	}
 
-	bool popFront(){
-		if (status == STATUS_READY || status == STATUS_RUNNING){
+	bool popFront(void){
+		bool ret = false;
 
+		sessionLock.AcquireExclusive();
+		if (!svr::Status::STATUS_HALT == status) {
+			
 		}
-		else{
-			return false;
-		}
+		sessionLock.ReleaseExclusive();
+
+		return ret;
 	}
 
 	bool getFirst(){
-		if (status == STATUS_READY || status == STATUS_RUNNING){
+		if (!svr::Status::STATUS_HALT == status){
 
 		}
 		else{

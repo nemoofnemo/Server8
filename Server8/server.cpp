@@ -1,7 +1,7 @@
 #include "server.h"
 
 #ifdef DEBUG
-LogModule Log("console");
+LogModule Log(L"console");
 #else
-LogModule Log("./server.log");
+LogModule Log(L"./server.log");
 #endif
