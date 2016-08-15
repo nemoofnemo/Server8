@@ -25,4 +25,14 @@
 #define WIN_SVR
 #define Interface struct
 
+//class Object should be base class of every other class.
+class Object {
+public:
+	Object() {
+
+	}
+
+	virtual ~Object() = 0;
+};
+
 #endif // SVRLIB_H_

@@ -15,7 +15,7 @@ namespace svrutil{
 #pragma warning(disable: 4244)
 //定时器
 //支持精度为毫秒级.错误代码0x502
-class svrutil::Timer{
+class svrutil::Timer : public Object{
 private:
 	static const int		TIMER_MODULE_ERROR = 0x502;
 	LARGE_INTEGER	large_interger;
@@ -69,7 +69,7 @@ public:
 //构造函数file的实参为"console"时,向控制台输出日志
 //否则写入指定文件,file为相对或绝对路径
 //错误代码0x501
-class svrutil::LogModule{
+class svrutil::LogModule : public Object {
 private:
 	static const int	 DEFAULT_BUFFER_SIZE	= 0x2000;
 	static const int	 LOG_MODULE_ERROR		= 0x501;
@@ -189,7 +189,7 @@ public:
 };
 
 //critical section
-class svrutil::CriticalSection{
+class svrutil::CriticalSection : public Object {
 private:
 	static const int CRITICAL_SECTION_ERROR = 0x503;
 	CRITICAL_SECTION lock;
@@ -200,61 +200,61 @@ private:
 
 	}
 
-	CriticalSection(const CriticalSection &){
-	
+CriticalSection(const CriticalSection &) {
+
+}
+
+void operator=(const CriticalSection &) {
+
+}
+
+bool init(DWORD dwSpinCount) {
+	bool ret = InitializeCriticalSectionAndSpinCount(&lock, dwSpinCount);
+	this->refCount = 0;
+
+	if (ret) {
+		lockFlag = true;
+	}
+	else {
+		lockFlag = false;
 	}
 
-	void operator=(const CriticalSection &){
-
-	}
-
-	bool init(DWORD dwSpinCount){		
-		bool ret = InitializeCriticalSectionAndSpinCount(&lock, dwSpinCount);
-		this->refCount = 0;
-
-		if (ret){
-			lockFlag = true;
-		}
-		else{
-			lockFlag = false;
-		}
-
-		return ret;
-	}
+	return ret;
+}
 
 public:
-	~CriticalSection(){
+	~CriticalSection() {
 		if (lockFlag)
 			DeleteCriticalSection(&lock);
 	}
 
-	int getRefCount(void){
+	int getRefCount(void) {
 		return refCount;
 	}
 
-	bool enter(void){
-		EnterCriticalSection(&lock); 
+	bool enter(void) {
+		EnterCriticalSection(&lock);
 		refCount++;
 		return true;
 	}
 
-	bool leave(void){
-		if (refCount > 0){
+	bool leave(void) {
+		if (refCount > 0) {
 			LeaveCriticalSection(&lock);
 			refCount--;
 			return true;
 		}
-		else{
+		else {
 			return false;
 		}
 	}
 
-	bool tryEnter(void){
+	bool tryEnter(void) {
 		bool ret = ::TryEnterCriticalSection(&lock);
-		if (!ret){
+		if (!ret) {
 			return false;
 		}
-		else{
+		else {
 			refCount++;
 			return true;
 		}
@@ -264,22 +264,85 @@ public:
 	//warning:
 	//the pointer that returned by create method 
 	//must released by delete key word or calling destructor.
-	static CriticalSection * createCriticalSection(DWORD dwSpinCount = 0x00000400){
+	static CriticalSection * create(DWORD dwSpinCount = 0x00000400) {
 		CriticalSection * pcs = new CriticalSection();
-		if (pcs->init(dwSpinCount)){
+		if (pcs->init(dwSpinCount)) {
 			return pcs;
 		}
-		else{
+		else {
 			delete pcs;
 			return NULL;
 		}
 	}
 };
 
-//slim read/write lock
-//(SRW_Lock in windows)
-class svrutil::SRWLock {
+//Slim reader/writer (SRW) locks enable the threads of a single process to access shared 
+class svrutil::SRWLock : public Object {
+private:
+	SRWLOCK lock;
+	int readThreadCount;
+	int writeThreadCount;
 
+	//not available
+	SRWLock(const SRWLock &) {
+
+	}
+
+	//not available
+	void operator=(const SRWLock &) {
+
+	}
+
+public:
+	SRWLock() {
+		InitializeSRWLock(&lock);
+		readThreadCount = 0;
+		writeThreadCount = 0;
+	}
+
+	void AcquireExclusive(void) {
+		writeThreadCount++;
+		AcquireSRWLockExclusive(&lock);
+	}
+
+	void AcquireShared(void) {
+		readThreadCount++;
+		AcquireSRWLockShared(&lock);
+	}
+
+	void ReleaseExclusive(void) {
+		writeThreadCount--;
+		ReleaseSRWLockExclusive(&lock);
+	}
+
+	void ReleaseShared(void) {
+		readThreadCount--;
+		ReleaseSRWLockShared(&lock);
+	}
+
+	bool TryAcquireExclusive(void) {
+		if (TryAcquireSRWLockExclusive(&lock)) {
+			writeThreadCount++;
+			return true;
+		}
+		else {
+			return false;
+		}
+	}
+
+	bool TryAcquireShared(void) {
+		if (TryAcquireSRWLockShared(&lock)) {
+			readThreadCount++;
+			return true;
+		}
+		else {
+			return false;
+		}
+	}
+
+	bool SleepConditionVariable(PCONDITION_VARIABLE ConditionVariable, DWORD dwMilliseconds, ULONG Flags) {
+		SleepConditionVariableSRW(ConditionVariable, &this->lock, dwMilliseconds, Flags);
+	}
 
 };
 

@@ -8,7 +8,6 @@ using std::vector;
 using std::string;
 using std::list;
 using std::iterator;
-using std::hash_map;
 using std::map;
 using svrutil::LogModule;
 
@@ -17,7 +16,6 @@ extern svrutil::LogModule Log;
 
 namespace svr{
 
-	class Object;
 	class ThreadPool;
 	class Event;
 	class Session;
@@ -81,17 +79,9 @@ namespace svr{
 	enum  NetStatus {};
 };
 
-//class svr::Object should be base class of every other class.
-class svr::Object{
-public:
-	Object();
-
-	virtual ~Object() = 0;
-};
-
 //class event . 
 //if length != 0 , destructor will run delete[] data to release memory.
-class svr::Event {
+class svr::Event : public Object{
 private:
 	void *				pData;
 	int					length;
@@ -210,7 +200,7 @@ public:
 //session内部为一个循环双向队列,由数组实现,元素为指向Event的指针.
 //销毁session对象时需要使用sessionMap上全局范围的锁, 而不应该使用session内部的关键段,
 //因为析构函数会释放CS结构,会出现同步错误问题.
-class svr::Session {
+class svr::Session : public Object{
 private:
 	struct m_queue {
 		int			size;
