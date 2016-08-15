@@ -29,7 +29,7 @@ namespace svr{
 	};
 
 	enum ConstVar {
-		DEFAULT_QUEUE_SIZE = 0x200,		//max size of event queue :	512 tasks
+		DEFAULT_QUEUE_SIZE = 0xAA,		//max size of event queue :	170 Events. 4080 bytes
 		DEFAULT_BUF_SIZ = 0x2000		//default buffer size :			8192 bytes
 	};
 
@@ -71,9 +71,11 @@ namespace svr{
 		SOCKET_BIND_ERROR = -3,
 		SOCKET_LISTEN_ERROR = -4,
 
-		LOG_MODULE_ERROR = 0x501,
-		TIMER_MODULE_ERROR = 0x502,
-		CRITICAL_SECTION_ERROR = 0x503
+		SESSION_INVALID_ARGUMENTS = 401,
+
+		LOG_MODULE_ERROR = 501,
+		TIMER_MODULE_ERROR = 502,
+		CRITICAL_SECTION_ERROR = 503
 	};
 
 	enum  NetStatus {};
@@ -81,6 +83,7 @@ namespace svr{
 
 //class event . 
 //if length != 0 , destructor will run delete[] data to release memory.
+//sizeof Event is 24 bytes 
 class svr::Event : public Object{
 private:
 	void *				pData;
@@ -88,12 +91,6 @@ private:
 	svr::Status			status;
 	svr::Level			level;
 	svr::Priority		priority;
-
-private:
-	//not available
-	Event operator= (const Event & e){
-
-	}
 
 public:
 	//default constructor
@@ -130,11 +127,33 @@ public:
 		status = event.status;
 		level = event.level;
 		priority = event.priority;
-
 		length = event.length;
-		pData = new char[length + 1];
-		((char*)pData)[length] = '\0';
-		memcpy_s(pData, length, event.pData, event.length);
+
+		if (event.length > 0) {
+			pData = new char[length + 1];
+			((char*)pData)[length] = '\0';
+			memcpy_s(pData, length, event.pData, event.length);
+		}
+		else {
+			pData = event.pData;
+		}
+	}
+
+	//assign operator
+	Event operator= (const Event & event) {
+		status = event.status;
+		level = event.level;
+		priority = event.priority;
+		length = event.length;
+
+		if (event.length > 0) {
+			pData = new char[length + 1];
+			((char*)pData)[length] = '\0';
+			memcpy_s(pData, length, event.pData, event.length);
+		}
+		else {
+			pData = event.pData;
+		}
 	}
 
 	~Event(){
@@ -198,8 +217,8 @@ public:
 };
 
 //session内部为一个循环双向队列,由数组实现,元素为指向Event的指针.
-//销毁session对象时需要使用sessionMap上全局范围的锁, 而不应该使用session内部的关键段,
-//因为析构函数会释放CS结构,会出现同步错误问题.
+//销毁session对象时需要使用sessionMap上全局范围的锁, 而不应该使用session内部的sessionLock,
+//因为析构函数会释放sessionLock结构,会出现同步错误问题.
 class svr::Session : public Object{
 private:
 	struct m_queue {
@@ -207,7 +226,7 @@ private:
 		int			maxSize;
 		int			head;
 		int			tail;
-		Event **	eventArr;
+		Event *		eventArr;
 
 		bool isFull(void) {
 			return (size == maxSize);
@@ -218,6 +237,7 @@ private:
 		}
 	};
 
+	//static const int SESSION_INVALID_ARGUMENTS = 
 	m_queue			eventQueue;
 	string				key;
 	map<string,void *>	kv_map;
@@ -248,19 +268,23 @@ public:
 	Session(const string &	key, int	 maxSize = svr::ConstVar::DEFAULT_QUEUE_SIZE, svr::Status status = svr::Status::STATUS_READY, svr::Level level = svr::Level::LEVEL_USER, svr::Priority pri = svr::Priority::PRI_MEDIUM) : 
 		key(key), status(status), level(level), priority(pri)
 	{
-		eventQueue.size = 0;
-		eventQueue.head = 0;
-		eventQueue.maxSize = maxSize;
-		eventQueue.tail = 0;
-		eventQueue.eventArr = new Event* [eventQueue.maxSize];
+		if (maxSize < 0) {
+			eventQueue.maxSize = svr::ConstVar::DEFAULT_QUEUE_SIZE;
+		}
+		else {
+			eventQueue.maxSize = maxSize;
+		}
 
+		eventQueue.size = 0;
+		eventQueue.head = maxSize - 1;
+		eventQueue.tail = 0;
 	}
 
 	~Session(){
 		clearEventQueue();
 	}
 
-	//user method
+	//user methods
 
 	const string & getKey(void) {
 		return this->key;
@@ -273,7 +297,7 @@ public:
 		return ret;
 	}
 
-	//status method
+	//status methods
 
 	svr::Status getStatus(void){
 		sessionLock.AcquireShared();
@@ -288,7 +312,7 @@ public:
 		sessionLock.ReleaseExclusive();
 	}
 
-	//priority method
+	//priority methods
 
 	svr::Priority getPriority(void){
 		sessionLock.AcquireShared();
@@ -303,10 +327,15 @@ public:
 		sessionLock.ReleaseExclusive();
 	}
 
+	//event queue methods
+
 	bool pushBack(const Event & event){
 		bool ret = false;
 		sessionLock.AcquireExclusive();
 		if (!eventQueue.isFull()) {
+			eventQueue.eventArr[eventQueue.tail++] = event;
+			eventQueue.tail %= eventQueue.maxSize;
+			eventQueue.size += 1;
 
 		}
 		sessionLock.ReleaseExclusive();

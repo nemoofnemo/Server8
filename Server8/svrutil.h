@@ -14,10 +14,10 @@ namespace svrutil {
 #pragma warning(push)
 #pragma warning(disable: 4244)
 //定时器
-//支持精度为毫秒级.错误代码0x502
+//支持精度为毫秒级.错误代码502
 class svrutil::Timer : public Object {
 private:
-	static const int		TIMER_MODULE_ERROR = 0x502;
+	static const int		TIMER_MODULE_ERROR = 502;
 	LARGE_INTEGER	large_interger;
 	LARGE_INTEGER	time;
 	double freq;
@@ -68,11 +68,11 @@ public:
 //带有缓冲区的日志记录模块
 //构造函数file的实参为"console"时,向控制台输出日志
 //否则写入指定文件,file为相对或绝对路径
-//错误代码0x501
+//错误代码501
 class svrutil::LogModule : public Object {
 private:
 	static const int	 DEFAULT_BUFFER_SIZE = 0x2000;
-	static const int	 LOG_MODULE_ERROR = 0x501;
+	static const int	 LOG_MODULE_ERROR = 501;
 
 	char *		buffer;
 	int			index;
