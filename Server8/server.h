@@ -218,8 +218,8 @@ private:
 	svr::Status			status;
 	svr::Priority		priority;
 
-	svrutil::CriticalSection* sessionLock;
-	//CRITICAL_SECTION		sessionLock;
+	//svrutil::CriticalSection* sessionLock;
+	svrutil::SRWLock sessionLock;
 private:
 	//default constructor is not available
 	Session(){
@@ -236,7 +236,6 @@ private:
 
 	}
 
-
 public:
 	Session(const string &	key, int	 maxSize = svr::ConstVar::DEFAULT_QUEUE_SIZE, svr::Status status = svr::Status::STATUS_READY, svr::Level level = svr::Level::LEVEL_USER, svr::Priority pri = svr::Priority::PRI_MEDIUM) : 
 		key(key), status(status), level(level), priority(pri)
@@ -247,51 +246,67 @@ public:
 		eventQueue.tail = 0;
 		eventQueue.eventArr = new Event* [eventQueue.maxSize];
 
-		sessionLock = svrutil::CriticalSection::create();
 	}
 
 	~Session(){
 		clearEventQueue();
-		::DeleteCriticalSection(&sessionLock);
 	}
 
 	//user method
 
-	int getEventCount(void){
-		return eventQueue.size;
-	}
-
-	svr::Status getStatus(void){
-		return this->status;
-	}
-
-	void setStatus(svr::Status status){
-		::EnterCriticalSection(&sessionLock);
-		this->status = status;
-		::LeaveCriticalSection(&sessionLock);
-	}
-
-	svr::Priority getPriority(void){
-		return this->priority;
-	}
-
-	void setPriority(svr::Priority pri){
-		::EnterCriticalSection(&sessionLock);
-		this->priority = pri;
-		::LeaveCriticalSection(&sessionLock);
-	}
-
-	const string & getKey(void){
+	const string & getKey(void) {
 		return this->key;
 	}
 
+	int getEventCount(void){
+		sessionLock.AcquireShared();
+		int ret = eventQueue.size;
+		sessionLock.ReleaseShared();
+		return ret;
+	}
+
+	//status method
+
+	svr::Status getStatus(void){
+		sessionLock.AcquireShared();
+		svr::Status ret = this->status;
+		sessionLock.ReleaseShared();
+		return ret;
+	}
+
+	void setStatus(svr::Status status){
+		sessionLock.AcquireExclusive();
+		this->status = status;
+		sessionLock.ReleaseExclusive();
+	}
+
+	//priority method
+
+	svr::Priority getPriority(void){
+		sessionLock.AcquireShared();
+		svr::Priority ret = this->priority;
+		sessionLock.ReleaseShared();
+		return ret;
+	}
+
+	void setPriority(svr::Priority pri){
+		sessionLock.AcquireExclusive();
+		this->priority = pri;
+		sessionLock.ReleaseExclusive();
+	}
+
+	//const string & getKey(void){
+	//	return this->key;
+	//}
+
 	bool pushBack(const Event & event){
 		bool ret = false;
-		::EnterCriticalSection(&sessionLock);
+		sessionLock.AcquireExclusive();
 		if (status == STATUS_READY || status == STATUS_RUNNING){
 
 		}
-		::LeaveCriticalSection(&sessionLock);
+		sessionLock.ReleaseExclusive();
+		return ret;
 	}
 
 	bool pushFront(){
@@ -325,4 +340,7 @@ public:
 
 	}
 
+	svrutil::SRWLock * getSessionLock(void) {
+		return &this->sessionLock;
+	}
 };
