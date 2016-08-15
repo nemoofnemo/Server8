@@ -208,6 +208,14 @@ private:
 		int			head;
 		int			tail;
 		Event **	eventArr;
+
+		bool isFull(void) {
+			return (size == maxSize);
+		}
+
+		bool isEmpty(void) {
+			return (size == 0);
+		}
 	};
 
 	m_queue			eventQueue;
@@ -295,14 +303,10 @@ public:
 		sessionLock.ReleaseExclusive();
 	}
 
-	//const string & getKey(void){
-	//	return this->key;
-	//}
-
 	bool pushBack(const Event & event){
 		bool ret = false;
 		sessionLock.AcquireExclusive();
-		if (status == STATUS_READY || status == STATUS_RUNNING){
+		if (!eventQueue.isFull()) {
 
 		}
 		sessionLock.ReleaseExclusive();
