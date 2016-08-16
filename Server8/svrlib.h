@@ -24,7 +24,7 @@
 #define DEBUG
 
 //platform
-#define WIN_SVR
+//#define WIN_SVR
 
 //interface
 #define Interface struct

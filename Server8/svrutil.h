@@ -11,8 +11,6 @@ namespace svrutil {
 	class SRWLock;
 };
 
-#pragma warning(push)
-#pragma warning(disable: 4244)
 //定时器
 //支持精度为毫秒级.错误代码502
 class svrutil::Timer : public Object {
@@ -63,14 +61,14 @@ public:
 		Sleep(ago);
 	}
 };
-#pragma warning(pop)
 
 //带有缓冲区的日志记录模块
 //构造函数file的实参为"console"时,向控制台输出日志
 //否则写入指定文件,file为相对或绝对路径
 //错误代码501
-#ifndef WIN_SVR
-class svrutil::LogModule : public Object {
+#ifdef WIN_SVR
+//todo: fix bugs
+class LogModule {
 private:
 	static const int	 DEFAULT_BUFFER_SIZE = 0x2000;
 	static const int	 LOG_MODULE_ERROR = 501;
@@ -130,6 +128,8 @@ public:
 	~LogModule() {
 		flush();
 		if (filePath != L"console") {
+			char tail = 0;
+			fwrite(&tail, 1, 1, pFile);
 			fclose(pFile);
 			delete[] buffer;
 		}
@@ -168,7 +168,7 @@ public:
 				}
 				EnterCriticalSection(&lock);
 				num = ::vswprintf_s(buffer + index, limit - index, format.c_str(), vl);
-				index += num * 2;
+				index += num;
 				LeaveCriticalSection(&lock);
 			}
 		}
@@ -181,7 +181,7 @@ public:
 	void flush(void) {
 		if (filePath != L"console") {
 			EnterCriticalSection(&lock);
-			::fwrite(buffer, index, 1, pFile);
+			::fwrite(buffer, sizeof(WCHAR), index, pFile);
 			::fflush(pFile);
 			index = 0;
 			LeaveCriticalSection(&lock);
@@ -307,7 +307,6 @@ public:
 		}
 	}
 };
-
 #endif
 
 //critical section
@@ -331,7 +330,7 @@ private:
 	}
 
 	bool init(DWORD dwSpinCount) {
-		BOOL ret = InitializeCriticalSectionAndSpinCount(&lock, dwSpinCount);
+		bool ret = InitializeCriticalSectionAndSpinCount(&lock, dwSpinCount);
 		this->refCount = 0;
 
 		if (ret) {

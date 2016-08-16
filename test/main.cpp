@@ -1,4 +1,4 @@
-#include <stdio.h>  
+﻿#include <stdio.h>  
 #include <stdlib.h> 
 #include <time.h>  
 #include <string.h>  
@@ -13,7 +13,6 @@
 #include <list>
 #include <array>
 #include <vector>
-#include <hash_map>
 #include <map>
 #include <exception>
 #include <cstdarg>
@@ -25,6 +24,5 @@ using namespace std;
 
 int main(void){
 
-	
 	return 0;
 }
