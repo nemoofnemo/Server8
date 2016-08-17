@@ -409,7 +409,8 @@ public:
 					eventQueue.tail--;
 
 				eventQueue.eventArr[eventQueue.tail].release();
-				
+				eventQueue.size--;
+
 				ret = true;
 			}
 		}
@@ -418,9 +419,20 @@ public:
 		return ret;
 	}
 
-	bool getFirst() {
-		if (!svr::Status::STATUS_HALT == status) {
+	bool getFirst(Event ** pEvent) {
+		if (!svr::Status::STATUS_HALT == status && (!eventQueue.isEmpty())) {
+			*pEvent = &eventQueue.eventArr[eventQueue.head];
+			return true;
+		}
+		else {
+			return false;
+		}
+	}
 
+	bool getLast(Event ** pEvent) {
+		if (!svr::Status::STATUS_HALT == status && (!eventQueue.isEmpty())) {
+			*pEvent = &eventQueue.eventArr[eventQueue.tail];
+			return true;
 		}
 		else {
 			return false;
@@ -428,10 +440,17 @@ public:
 	}
 
 	void clearEventQueue(void) {
+		sessionLock.AcquireExclusive();
+		for (int i = 0; i < eventQueue.size; ++i) {
 
+		}
+		sessionLock.ReleaseExclusive();
 	}
 
 	svrutil::SRWLock * getSessionLock(void) {
-		return &this->sessionLock;
+		sessionLock.AcquireShared();
+		SRWLock * ret = &this->sessionLock;
+		sessionLock.ReleaseShared();
+		return ret;
 	}
 };
