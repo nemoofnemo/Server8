@@ -276,10 +276,11 @@ private:
 	}
 
 public:
+	//constructor
 	Session(const string &	key, int	 maxSize = svr::ConstVar::DEFAULT_QUEUE_SIZE, svr::Status status = svr::Status::STATUS_READY, svr::Level level = svr::Level::LEVEL_USER, svr::Priority pri = svr::Priority::PRI_MEDIUM) :
 		key(key), status(status), level(level), priority(pri)
 	{
-		if (maxSize < DEFAULT_QUEUE_SIZE) {
+		if (maxSize <= 0) {
 			eventQueue.maxSize = svr::ConstVar::DEFAULT_QUEUE_SIZE;
 		}
 		else {
@@ -288,11 +289,13 @@ public:
 
 		eventQueue.size = 0;
 		eventQueue.tail = eventQueue.maxSize / 2;
-		eventQueue.head = eventQueue.tail - 1;
+		eventQueue.head = eventQueue.tail;
+		eventQueue.eventArr = new Event[eventQueue.maxSize];
 	}
 
 	~Session() {
 		clearEventQueue();
+		delete[] eventQueue.eventArr;
 	}
 
 	//user methods
@@ -344,12 +347,21 @@ public:
 		bool ret = false;
 
 		sessionLock.AcquireExclusive();
-		if (!svr::Status::STATUS_HALT == status) {
+		if (svr::Status::STATUS_HALT != status) {
 			if (!eventQueue.isFull()) {
+				eventQueue.tail != eventQueue.maxSize - 1 ?
+					eventQueue.tail++ :
+					eventQueue.tail = 0;
 				eventQueue.eventArr[eventQueue.tail] = event;
-				eventQueue.size += 1;
-				eventQueue.tail++;
-				eventQueue.tail %= eventQueue.maxSize;
+
+				if (eventQueue.size != 0) {
+					eventQueue.size++;
+				}
+				else {
+					eventQueue.size++;
+					eventQueue.head = eventQueue.tail;
+				}
+
 				ret = true;
 			}
 		}
@@ -362,14 +374,21 @@ public:
 		bool ret = false;
 
 		sessionLock.AcquireExclusive();
-		if (!svr::Status::STATUS_HALT == status) {
+		if (svr::Status::STATUS_HALT != status) {
 			if (!eventQueue.isFull()) {
-				eventQueue.head == 0 ?
-					eventQueue.head = eventQueue.maxSize - 1 :
-					eventQueue.head--;
-
+				eventQueue.head != 0 ?
+					eventQueue.head-- :
+					eventQueue.head = eventQueue.maxSize - 1;
 				eventQueue.eventArr[eventQueue.head] = event;
-				eventQueue.size += 1;
+
+				if (eventQueue.size != 0) {
+					eventQueue.size++;
+				}
+				else {
+					eventQueue.size++;
+					eventQueue.tail = eventQueue.head;
+				}
+
 				ret = true;
 			}
 		}
@@ -382,14 +401,21 @@ public:
 		bool ret = false;
 
 		sessionLock.AcquireExclusive();
-		if (!svr::Status::STATUS_HALT == status) {
+		if (svr::Status::STATUS_HALT != status) {
 			if (!eventQueue.isEmpty()) {
 				eventQueue.eventArr[eventQueue.head].release();
-				eventQueue.head == eventQueue.maxSize - 1 ?
-					eventQueue.head = 0 :
-					eventQueue.head++;
+				eventQueue.head != eventQueue.maxSize - 1 ?
+					eventQueue.head++ :
+					eventQueue.head = 0;
 
-				eventQueue.size++;
+				if (eventQueue.size > 1) {
+					eventQueue.size--;
+				}
+				else {
+					eventQueue.size--;
+					eventQueue.tail = eventQueue.head;
+				}
+
 				ret = true;
 			}
 		}
@@ -402,14 +428,20 @@ public:
 		bool ret = false;
 
 		sessionLock.AcquireExclusive();
-		if (!svr::Status::STATUS_HALT == status) {
+		if (svr::Status::STATUS_HALT != status) {
 			if (!eventQueue.isEmpty()) {
+				eventQueue.eventArr[eventQueue.tail].release();
 				eventQueue.tail == 0 ?
 					eventQueue.tail = eventQueue.maxSize - 1 :
 					eventQueue.tail--;
-
-				eventQueue.eventArr[eventQueue.tail].release();
-				eventQueue.size--;
+				
+				if (eventQueue.size > 1) {
+					eventQueue.size--;
+				}
+				else {
+					eventQueue.size--;
+					eventQueue.head = eventQueue.tail;
+				}
 
 				ret = true;
 			}
@@ -420,37 +452,105 @@ public:
 	}
 
 	bool getFirst(Event ** pEvent) {
-		if (!svr::Status::STATUS_HALT == status && (!eventQueue.isEmpty())) {
+		bool ret = false;
+
+		sessionLock.AcquireShared();
+		if (svr::Status::STATUS_HALT != status && (!eventQueue.isEmpty())) {
 			*pEvent = &eventQueue.eventArr[eventQueue.head];
-			return true;
+			ret = true;
 		}
 		else {
-			return false;
+			*pEvent = NULL;
 		}
+		sessionLock.ReleaseShared();
+
+		return ret;
 	}
 
 	bool getLast(Event ** pEvent) {
-		if (!svr::Status::STATUS_HALT == status && (!eventQueue.isEmpty())) {
+		bool ret = false;
+
+		sessionLock.AcquireShared();
+		if (svr::Status::STATUS_HALT != status && (!eventQueue.isEmpty())) {
 			*pEvent = &eventQueue.eventArr[eventQueue.tail];
-			return true;
+			ret = true;
 		}
 		else {
-			return false;
+			*pEvent = NULL;
 		}
+		sessionLock.ReleaseShared();
+
+		return ret;
 	}
 
 	void clearEventQueue(void) {
 		sessionLock.AcquireExclusive();
+		int index = eventQueue.head;
 		for (int i = 0; i < eventQueue.size; ++i) {
-
+			eventQueue.eventArr[index].release();
+			index == eventQueue.maxSize - 1 ?
+				index = 0 :
+				index++;
 		}
 		sessionLock.ReleaseExclusive();
 	}
 
+	//other methods
+
+	//warning !
 	svrutil::SRWLock * getSessionLock(void) {
 		sessionLock.AcquireShared();
 		svrutil::SRWLock * ret = &this->sessionLock;
 		sessionLock.ReleaseShared();
 		return ret;
+	}
+
+	//warning
+	map<string, void*> * getMap(void) {
+		sessionLock.AcquireShared();
+		map<string, void*> * ret = &this->kv_map;
+		sessionLock.ReleaseShared();
+		return ret;
+	}
+
+	//key-value map methods
+
+	bool put(const string & key, void * value) {
+		sessionLock.AcquireExclusive();
+		kv_map.insert_or_assign(key, value);
+		sessionLock.ReleaseExclusive();
+		return true;
+	}
+
+	bool get(const string & key, void ** pValue) {
+		bool ret = false;
+		sessionLock.AcquireExclusive();
+		map<string, void *>::iterator it = kv_map.find(key);
+		if (it == kv_map.end()) {
+			*pValue = NULL;
+		}
+		else {
+			*pValue = it->second;
+			ret = true;
+		}
+		sessionLock.ReleaseExclusive();
+		return ret;
+	}
+
+	void show(bool showEvents = false) {
+		sessionLock.AcquireShared();
+		Log.write("[Session]:\nkey:%s\neventCount=%d, status=%d, level=%d, priority=%d", key.c_str(), eventQueue.size, status, level, priority);
+		
+		if (showEvents) {
+			int index = eventQueue.head;
+			for (int i = 0; i < eventQueue.size; ++i) {
+				eventQueue.eventArr[index].show();
+				index == eventQueue.maxSize - 1 ?
+					index = 0 :
+					index++;
+			}
+		}
+
+		sessionLock.ReleaseShared();
 	}
 };
