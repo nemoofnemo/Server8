@@ -449,7 +449,7 @@ public:
 
 	svrutil::SRWLock * getSessionLock(void) {
 		sessionLock.AcquireShared();
-		SRWLock * ret = &this->sessionLock;
+		svrutil::SRWLock * ret = &this->sessionLock;
 		sessionLock.ReleaseShared();
 		return ret;
 	}

@@ -16,6 +16,7 @@
 #include <map>
 #include <exception>
 #include <cstdarg>
+#include <ctype.h>
 
 #pragma comment(lib, "ws2_32.lib") 
 using namespace std;

@@ -1,8 +1,6 @@
 #ifndef SVRLIB_H_
 #define SVRLIB_H_
 
-#include <stdio.h>  
-#include <stdlib.h> 
 #include <time.h>  
 #include <string.h>  
 #include <process.h>
@@ -24,7 +22,10 @@
 #define DEBUG
 
 //platform
-//#define WIN_SVR
+#define WIN_SVR
+
+//encode
+//#define UNICODE_SUPPORT
 
 //interface
 #define Interface struct
