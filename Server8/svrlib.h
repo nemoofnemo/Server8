@@ -1,6 +1,11 @@
 #ifndef SVRLIB_H_
 #define SVRLIB_H_
 
+//for debug
+#define _CRTDBG_MAP_ALLOC
+#include <stdlib.h>
+#include <crtdbg.h>
+
 #include <time.h>  
 #include <string.h>  
 #include <process.h>
@@ -18,11 +23,18 @@
 
 #pragma comment(lib, "ws2_32.lib") 
 
-//debug mode
-#define DEBUG
+#ifdef _DEBUG 
+#ifndef DBG_NEW 
+#define DBG_NEW new ( _NORMAL_BLOCK , __FILE__ , __LINE__ ) 
+#define new DBG_NEW 
+#endif 
+#endif  // _DEBUG
 
 //platform
 #define WIN_SVR
+
+//debug mode
+#define SVR_DEBUG
 
 //encode
 //#define UNICODE_SUPPORT

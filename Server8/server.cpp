@@ -1,6 +1,6 @@
 #include "server.h"
 
-#ifdef DEBUG
+#ifdef SVR_DEBUG
 LogModule Log("console");
 #else
 LogModule Log(L"./server.log");

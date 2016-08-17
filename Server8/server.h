@@ -554,3 +554,14 @@ public:
 		sessionLock.ReleaseShared();
 	}
 };
+
+class svr::SessionManager : public Object {
+private:
+
+
+};
+
+class svr::Server : public Object {
+
+
+};
