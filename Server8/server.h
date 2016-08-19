@@ -70,6 +70,7 @@ namespace svr {
 		SOCKET_LISTEN_ERROR = -4,
 
 		SESSION_INVALID_ARGUMENTS = 401,
+		SESSION_MANAGER_ERROR = 402,
 
 		LOG_MODULE_ERROR = 501,
 		TIMER_MODULE_ERROR = 502,
@@ -561,11 +562,106 @@ public:
 
 class svr::SessionManager : public Object {
 private:
+	svr::Status			status;
+	std::map<string, Session*> sessionMap;
+	std::map<string, void*> kv_map;
+	svrutil::SRWLock lock;
 
+private:
+	SessionManager(const SessionManager &) {
+		
+	}
+
+	void operator=(const SessionManager &) {
+
+	}
+
+public:
+	SessionManager() {
+		status = svr::Status::STATUS_READY;
+	}
+
+	//todo
+	~SessionManager() {
+		
+	}
+
+	//session map methods
+
+	bool addSession(
+			const string &	key,
+			int	maxSize			= svr::ConstVar::DEFAULT_QUEUE_SIZE,
+			svr::Status status	= svr::Status::STATUS_READY,
+			svr::Level level		= svr::Level::LEVEL_USER,
+			svr::Priority pri	= svr::Priority::PRI_MEDIUM)
+	{
+
+	}
+
+	bool removeSession(const string & key) {
+
+
+	}
+
+	//getSessionCount
+	int getSessionCount(void) {
+		lock.AcquireShared();
+		int ret = this->sessionMap.size();
+		lock.ReleaseShared();
+		return ret;
+	}
+
+	//status methods
+
+	svr::Status getStatus(void) {
+		lock.AcquireShared();
+		svr::Status ret = this->status;
+		lock.ReleaseShared();
+		return ret;
+	}
+
+	void setStatus(svr::Status status) {
+		lock.AcquireExclusive();
+		this->status = status;
+		lock.ReleaseExclusive();
+	}
+
+	//warning
+	map<string, void*> * getMap(void) {
+		lock.AcquireShared();
+		map<string, void*> * ret = &this->kv_map;
+		lock.ReleaseShared();
+		return ret;
+	}
+
+	//key-value map methods
+
+	bool put(const string & key, void * value) {
+		lock.AcquireExclusive();
+		kv_map.insert_or_assign(key, value);
+		lock.ReleaseExclusive();
+		return true;
+	}
+
+	bool get(const string & key, void ** pValue) {
+		bool ret = false;
+		lock.AcquireExclusive();
+		map<string, void *>::iterator it = kv_map.find(key);
+		if (it == kv_map.end()) {
+			*pValue = NULL;
+		}
+		else {
+			*pValue = it->second;
+			ret = true;
+		}
+		lock.ReleaseExclusive();
+		return ret;
+	}
 
 };
 
 class svr::Server : public Object {
-
-
+private:
+	string instanceName;
+	svr::Status			status;
 };
