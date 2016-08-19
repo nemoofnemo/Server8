@@ -81,10 +81,12 @@
     <ClCompile Include="svrlib.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="md5.h" />
     <ClInclude Include="server.h" />
     <ClInclude Include="svrutil.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\README.md" />
     <None Include="..\Server8.vsdx" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

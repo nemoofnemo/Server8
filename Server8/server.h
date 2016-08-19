@@ -493,6 +493,11 @@ public:
 				index = 0 :
 				index++;
 		}
+
+		eventQueue.size = 0;
+		eventQueue.tail = eventQueue.maxSize / 2;
+		eventQueue.head = eventQueue.tail;
+
 		sessionLock.ReleaseExclusive();
 	}
 

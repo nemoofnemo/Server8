@@ -13,7 +13,7 @@ unsigned int __stdcall work(void * pArg) {
 	// 第一个参数：需要进行连接操作的套接字
 	// 第二个参数：设定所需要连接的地址信息
 	// 第三个参数：地址的长度
-	//pHostent = gethostbyname("5033598.all123.net");
+	//pHostent = gethostbyname("????.com");
 
 	SOCKADDR_IN addrSrv;
 	addrSrv.sin_addr.s_addr = inet_addr("127.0.0.1");
@@ -63,17 +63,31 @@ void CreateTests(int num) {
 	}
 
 	//WaitForMultipleObjects(num, arr, TRUE, INFINITE);
-	Sleep(5000);
+	Sleep(0);
 	WaitForMultipleObjectsEx(num, arr, TRUE, INFINITE, FALSE);
 
 	delete[] arr;
 	printf("send:%d,success:%d,rate=%f%%\n", num, sendSuccess, 100 * ((double)sendSuccess / num));
-	//WSACleanup();	// 终止对套接字库的使用
+	WSACleanup();	// 终止对套接字库的使用
 }
 
 int main(void) {
-	system("pause");
-	CreateTests(30);
+	char ch;
+
+	puts("continue?y/n:");
+	scanf("%c", &ch);
+	while (getchar() != '\n') {
+		continue;
+	}
+
+	while (ch != 'N' && ch != 'n') {
+		CreateTests(50);
+		puts("continue?y/n:");
+		scanf("%c", &ch);
+		while (getchar() != '\n') {
+			continue;
+		}
+	}
 
 	return 0;
 }

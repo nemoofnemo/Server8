@@ -32,9 +32,15 @@
     <ClInclude Include="svrutil.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="md5.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\Server8.vsdx">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="..\README.md">
       <Filter>资源文件</Filter>
     </None>
   </ItemGroup>

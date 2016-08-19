@@ -1,6 +1,7 @@
 #ifndef SVRUTIL
 #define SVRUTIL
 #include "svrlib.h"
+#include "md5.h"
 
 using std::string;
 
@@ -11,6 +12,7 @@ namespace svrutil {
 	class SRWLock;
 	class RandomString;
 	class ThreadPool;
+	class MD5;
 };
 
 //定时器
@@ -64,10 +66,7 @@ public:
 	}
 };
 
-//带有缓冲区的日志记录模块
-//构造函数file的实参为"console"时,向控制台输出日志
-//否则写入指定文件,file为相对或绝对路径
-//错误代码501
+//log module
 #ifdef UNICODE_SUPPORT
 //todo: fix bugs
 class LogModule {
@@ -191,6 +190,10 @@ public:
 	}
 };
 #else
+//带有缓冲区的日志记录模块
+//构造函数file的实参为"console"时,向控制台输出日志
+//否则写入指定文件,file为相对或绝对路径
+//错误代码501
 class svrutil::LogModule : public Object{
 private:
 	static const int	 DEFAULT_BUFFER_SIZE = 0x2000;
@@ -470,7 +473,7 @@ public:
 };
 
 //create 
-class svrutil::RandomString : public Object {
+class svrutil::RandomString {
 public:
 	static string create(int length = 16) {
 		static const char v_dict[64] = {			//62bytes
@@ -490,7 +493,19 @@ public:
 	}
 };
 
+//md5 string : 16 bytes
+class svrutil::MD5 {
+public:
+	static string create(void * src, unsigned int len) {
+		char temp[16] = { 0 };
+		MD5Digest((char*)src, len, temp);
+		return string(temp);
+	}
+};
+
 //thread pool
+#ifdef WIN_SVR
+//thread pool : windows vista or above.
 class svrutil::ThreadPool : public Object {
 private:
 	static const int SERVER_THREAD_POOL_ERROR = 504;
@@ -500,8 +515,37 @@ private:
 	int ThreadMinimum;
 	int ThreadMaximum;
 
+	PTP_WORK ptpWork;
+	PTP_WORK_CALLBACK ptpWorkCallBack;
+	PTP_WAIT ptpWait;
+	PTP_WAIT_CALLBACK ptpWaitCallBack;
+	PTP_TIMER ptpTimer;
+	PTP_TIMER_CALLBACK ptpTimerCallBack;
+
+	/* 
+	//this is a call back example from msdn.
+	VOID CALLBACK myCallback(
+		PTP_CALLBACK_INSTANCE Instance,
+		PVOID                 Parameter,
+		PTP_WORK              Work){
+		// Instance, Parameter, and Work not used in this example.
+		UNREFERENCED_PARAMETER(Instance);
+		UNREFERENCED_PARAMETER(Parameter);
+		UNREFERENCED_PARAMETER(Work);
+
+		BOOL bRet = FALSE;
+
+		//
+		// Do something when the work callback is invoked.
+		//
+		{
+			printf("%d\n", GetCurrentThreadId());
+		}
+
+		return;
+	} */
 public:
-	ThreadPool(int min = 1, int max = 2) {
+	ThreadPool(int min = 1, int max = 4) {
 		ThreadMinimum = min;
 		ThreadMaximum = max;
 
@@ -531,9 +575,70 @@ public:
 		CloseThreadpool(pThreadpool);							// 关闭线程池
 	}
 
+	bool createWorkThread(PTP_WORK_CALLBACK pf) {
+		PTP_WORK prev = ptpWork;
+		bool ret = false;
+		ptpWork = CreateThreadpoolWork(pf, NULL, &CallBackEnviron);
+		
+		if (NULL == ptpWork) {
+			Log.write("in createWorkThread : error");
+			ptpWork = prev;
+		}
+		else {
+			ret = true;
+		}
+
+		return ret;
+	}
+
+	void submitWork(void) {
+		SubmitThreadpoolWork(ptpWork);
+	}
+
+	//todo
+
+	bool createWaitThread(PTP_WAIT_CALLBACK pf) {
+		PTP_WAIT prev = ptpWait;
+		bool ret = false;
+		ptpWait = CreateThreadpoolWait(pf, NULL, &CallBackEnviron);
+
+		if (NULL == ptpWait) {
+			Log.write("in createWorkThread : error");
+			ptpWait = prev;
+		}
+		else {
+			ret = true;
+		}
+
+		return ret;
+	}
+
+	void submitWait(void);
+
+	bool createTimerThread(PTP_TIMER_CALLBACK pf) {
+		PTP_TIMER prev = ptpTimer;
+		bool ret = false;
+		ptpTimer = CreateThreadpoolTimer(pf, NULL, &CallBackEnviron);
+
+		if (NULL == ptpTimer) {
+			Log.write("in createWorkThread : error");
+			ptpTimer = prev;
+		}
+		else {
+			ret = true;
+		}
+
+		return ret;
+	}
+
+	void submitTimer(void);
+
 	TP_CALLBACK_ENVIRON & getCallbackEnviron(void) {
 		return this->CallBackEnviron;
 	}
 };
+#else
+
+#endif
 
 #endif // !SVRUTIL
