@@ -205,7 +205,7 @@ inline   void   MD5Final(unsigned   char   digest[16], MD5_CTX   *context)
 }
 
 //加密函数:第一个参数为输入,第二个参数为输入长度,第三个参数为目的地址(产生16字节的数据)
-void   MD5Digest(char   *pszInput, unsigned   long   nInputSize, char   *pszOutPut)
+inline	void   MD5Digest(char   *pszInput, unsigned   long   nInputSize, char   *pszOutPut)
 {
 	MD5_CTX   context;
 	//unsigned   int   len = strlen(pszInput);

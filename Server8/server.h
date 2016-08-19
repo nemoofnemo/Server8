@@ -16,13 +16,11 @@ extern svrutil::LogModule Log;
 
 namespace svr {
 
-	class ThreadPool;
 	class Event;
 	class Session;
 	class ServerConfig;
 	class SessionManager;
 	class Server;
-	class TPCallback;
 
 	Interface CallBackInterface{
 		unsigned int __stdcall run(void *);

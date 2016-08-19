@@ -581,7 +581,6 @@ public:
 		ptpWork = CreateThreadpoolWork(pf, NULL, &CallBackEnviron);
 		
 		if (NULL == ptpWork) {
-			Log.write("in createWorkThread : error");
 			ptpWork = prev;
 		}
 		else {
@@ -595,15 +594,12 @@ public:
 		SubmitThreadpoolWork(ptpWork);
 	}
 
-	//todo
-
 	bool createWaitThread(PTP_WAIT_CALLBACK pf) {
 		PTP_WAIT prev = ptpWait;
 		bool ret = false;
 		ptpWait = CreateThreadpoolWait(pf, NULL, &CallBackEnviron);
 
 		if (NULL == ptpWait) {
-			Log.write("in createWorkThread : error");
 			ptpWait = prev;
 		}
 		else {
@@ -613,7 +609,9 @@ public:
 		return ret;
 	}
 
-	void submitWait(void);
+	void setWait(HANDLE h, PFILETIME pf) {
+		SetThreadpoolWait(ptpWait, h, pf);
+	}
 
 	bool createTimerThread(PTP_TIMER_CALLBACK pf) {
 		PTP_TIMER prev = ptpTimer;
@@ -621,7 +619,6 @@ public:
 		ptpTimer = CreateThreadpoolTimer(pf, NULL, &CallBackEnviron);
 
 		if (NULL == ptpTimer) {
-			Log.write("in createWorkThread : error");
 			ptpTimer = prev;
 		}
 		else {
@@ -631,7 +628,10 @@ public:
 		return ret;
 	}
 
-	void submitTimer(void);
+	//period and length is time in ms.
+	void setTimer(PFILETIME pFileTime, DWORD period, DWORD length) {
+		SetThreadpoolTimer(ptpTimer, pFileTime, period, length);
+	}
 
 	TP_CALLBACK_ENVIRON & getCallbackEnviron(void) {
 		return this->CallBackEnviron;
