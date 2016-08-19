@@ -3,5 +3,5 @@
 #ifdef SVR_DEBUG
 LogModule Log("console");
 #else
-LogModule Log(L"./server.log");
+LogModule Log("./server.log");
 #endif

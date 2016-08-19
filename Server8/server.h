@@ -66,7 +66,7 @@ namespace svr {
 		MAN_CONTINUE
 	};
 
-	enum ExitCode {
+	enum ErrorCode {
 		IOCP_CREATE_ERROR = -2,
 		SOCKET_BIND_ERROR = -3,
 		SOCKET_LISTEN_ERROR = -4,
@@ -75,7 +75,8 @@ namespace svr {
 
 		LOG_MODULE_ERROR = 501,
 		TIMER_MODULE_ERROR = 502,
-		CRITICAL_SECTION_ERROR = 503
+		CRITICAL_SECTION_ERROR = 503,
+		SERVER_THREAD_POOL_ERROR = 504
 	};
 
 	enum  NetStatus {};

@@ -10,6 +10,7 @@ namespace svrutil {
 	class CriticalSection;
 	class SRWLock;
 	class RandomString;
+	class ThreadPool;
 };
 
 //定时器
@@ -486,6 +487,52 @@ public:
 		str[length] = 0;
 
 		return string(str);
+	}
+};
+
+//thread pool
+class svrutil::ThreadPool : public Object {
+private:
+	static const int SERVER_THREAD_POOL_ERROR = 504;
+	PTP_POOL pThreadpool;
+	TP_CALLBACK_ENVIRON CallBackEnviron;
+	PTP_CLEANUP_GROUP pCleanupgroup;
+	int ThreadMinimum;
+	int ThreadMaximum;
+
+public:
+	ThreadPool(int min = 1, int max = 2) {
+		ThreadMinimum = min;
+		ThreadMaximum = max;
+
+		pThreadpool = CreateThreadpool(NULL);
+		if (NULL == pThreadpool) {
+			exit(SERVER_THREAD_POOL_ERROR);
+		}
+
+		InitializeThreadpoolEnvironment(&CallBackEnviron);
+		SetThreadpoolThreadMaximum(pThreadpool, max);
+		SetThreadpoolThreadMinimum(pThreadpool, min);
+
+		SetThreadpoolCallbackPool(&CallBackEnviron, pThreadpool);
+
+		pCleanupgroup = CreateThreadpoolCleanupGroup();
+		if (NULL == pCleanupgroup) {
+			exit(SERVER_THREAD_POOL_ERROR);
+		}
+
+		SetThreadpoolCallbackCleanupGroup(&CallBackEnviron, pCleanupgroup, NULL);
+	}
+
+	~ThreadPool(){
+		CloseThreadpoolCleanupGroupMembers(pCleanupgroup, FALSE, NULL);
+		CloseThreadpoolCleanupGroup(pCleanupgroup);			// 关闭线程池清理组
+		DestroyThreadpoolEnvironment(&CallBackEnviron);		// 删除回调函数环境结构
+		CloseThreadpool(pThreadpool);							// 关闭线程池
+	}
+
+	TP_CALLBACK_ENVIRON & getCallbackEnviron(void) {
+		return this->CallBackEnviron;
 	}
 };
 
