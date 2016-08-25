@@ -1,12 +1,1 @@
-﻿  svrlib.h
-  server.cpp
-d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(33): warning C4244: “=”: 从“LONGLONG”转换到“double”，可能丢失数据
-d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(65): warning C4244: “参数”: 从“const unsigned __int64”转换到“DWORD”，可能丢失数据
-d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(338): warning C4800: “BOOL”: 将值强制为布尔值“true”或“false”(性能警告)
-  main.cpp
-d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(33): warning C4244: “=”: 从“LONGLONG”转换到“double”，可能丢失数据
-d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(65): warning C4244: “参数”: 从“const unsigned __int64”转换到“DWORD”，可能丢失数据
-d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(338): warning C4800: “BOOL”: 将值强制为布尔值“true”或“false”(性能警告)
-  正在生成代码...
-  Server8.vcxproj -> D:\Documents\Visual Studio 2015\Projects\Server8\Debug\Server8.exe
-  Server8.vcxproj -> D:\Documents\Visual Studio 2015\Projects\Server8\Debug\Server8.pdb (Full PDB)
+﻿

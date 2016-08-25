@@ -1,41 +1,44 @@
 ﻿#include "../Server8/server.h"
 
-VOID CALLBACK myCallback(
-	PTP_CALLBACK_INSTANCE Instance,
-	PVOID                 Parameter,
-	PTP_TIMER              Work) {
-	// Instance, Parameter, and Work not used in this example.
-	UNREFERENCED_PARAMETER(Instance);
-	UNREFERENCED_PARAMETER(Parameter);
-	UNREFERENCED_PARAMETER(Work);
+LogModule Log("console");
 
-	BOOL bRet = FALSE;
-	static int i = 0;
-	//
-	// Do something when the work callback is invoked.
-	//
-	{
-		i++;
-		printf("in thread %d: %d\n", GetCurrentThreadId(), i);
-	}
-
-	return;
-}
+//VOID CALLBACK myCallback(
+//	PTP_CALLBACK_INSTANCE Instance,
+//	PVOID                 Parameter,
+//	PTP_TIMER              Work) {
+//	// Instance, Parameter, and Work not used in this example.
+//	UNREFERENCED_PARAMETER(Instance);
+//	UNREFERENCED_PARAMETER(Parameter);
+//	UNREFERENCED_PARAMETER(Work);
+//
+//	BOOL bRet = FALSE;
+//	static int i = 0;
+//	//
+//	// Do something when the work callback is invoked.
+//	//
+//	{
+//		i++;
+//		printf("in thread %d: %d\n", GetCurrentThreadId(), i);
+//	}
+//
+//	return;
+//}
 
 int main(void) {
-	svrutil::ThreadPool tp;
-	PTP_TIMER timer;
-	PTP_TIMER_CALLBACK cb = myCallback;
-	ULARGE_INTEGER temp ;
-	temp.QuadPart = (ULONGLONG)-(1 * 10 * 1000 * 1000);
-	FILETIME ft;
-	ft.dwHighDateTime = temp.HighPart;
-	ft.dwLowDateTime = temp.LowPart;
+	//svrutil::ThreadPool tp;
+	//PTP_TIMER timer;
+	//PTP_TIMER_CALLBACK cb = myCallback;
+	//ULARGE_INTEGER temp ;
+	//temp.QuadPart = (ULONGLONG)-(1 * 10 * 1000 * 1000);
+	//FILETIME ft;
+	//ft.dwHighDateTime = temp.HighPart;
+	//ft.dwLowDateTime = temp.LowPart;
 
-	timer = CreateThreadpoolTimer(cb, NULL, &tp.getCallbackEnviron());
-	SetThreadpoolTimer(timer, &ft, 500, 50);
+	//timer = CreateThreadpoolTimer(cb, NULL, &tp.getCallbackEnviron());
+	//SetThreadpoolTimer(timer, &ft, 500, 50);
 
-	system("pause");
+	//system("pause");
 
+	Log.write("ss");
 	return 0;
 }

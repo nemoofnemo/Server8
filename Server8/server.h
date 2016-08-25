@@ -598,8 +598,15 @@ public:
 
 	}
 
-	bool removeSession(const string & key) {
+	svr::Session * getSession(const string & key) {
 
+	}
+
+	bool isSessionExsist(const string & key) {
+
+	}
+
+	bool removeSession(const string & key) {
 
 	}
 

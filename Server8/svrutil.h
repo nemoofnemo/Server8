@@ -13,6 +13,7 @@ namespace svrutil {
 	class RandomString;
 	class ThreadPool;
 	class MD5;
+	class SystemInfo;
 };
 
 //定时器
@@ -503,8 +504,6 @@ public:
 	}
 };
 
-//thread pool
-#ifdef WIN_SVR
 //thread pool : windows vista or above.
 class svrutil::ThreadPool : public Object {
 private:
@@ -637,8 +636,63 @@ public:
 		return this->CallBackEnviron;
 	}
 };
-#else
 
-#endif
+//memory usage , CPU usage and processor number
+class svrutil::SystemInfo {
+private:
+	static unsigned long long CompareFileTime(FILETIME time1, FILETIME time2)
+	{
+		unsigned long long a = (unsigned long long)time1.dwHighDateTime << 32 | time1.dwLowDateTime;
+		unsigned long long b = (unsigned long long)time2.dwHighDateTime << 32 | time2.dwLowDateTime;
+
+		return   (b - a);
+	}
+public:
+	static int getProcessorCount(void) {
+		SYSTEM_INFO si;
+		GetSystemInfo(&si);
+		return si.dwNumberOfProcessors;
+	}
+
+	static DWORD getMemoryUsage(void) {
+		MEMORYSTATUS ms;
+		GlobalMemoryStatus(&ms);
+		return ms.dwMemoryLoad;
+	}
+
+	static int getCPUUsage(void) {
+		HANDLE hEvent;
+		BOOL res;
+
+		FILETIME preidleTime;
+		FILETIME prekernelTime;
+		FILETIME preuserTime;
+
+		FILETIME idleTime;
+		FILETIME kernelTime;
+		FILETIME userTime;
+
+		res = GetSystemTimes(&idleTime, &kernelTime, &userTime);
+
+		preidleTime = idleTime;
+		prekernelTime = kernelTime;
+		preuserTime = userTime;
+
+		hEvent = CreateEvent(NULL, FALSE, FALSE, NULL); // 初始值为 nonsignaled ，并且每次触发后自动设置为nonsignaled
+
+		WaitForSingleObject(hEvent, 1000); //等待500毫秒
+		res = GetSystemTimes(&idleTime, &kernelTime, &userTime);
+		int idle = CompareFileTime(preidleTime, idleTime);
+		int kernel = CompareFileTime(prekernelTime, kernelTime);
+		int user = CompareFileTime(preuserTime, userTime);
+		int cpu = (kernel + user - idle) * 100 / (kernel + user);
+		//int cpuidle = (idle) * 100 / (kernel + user);
+		////cout << "CPU利用率:" << cpu << "%" << "      CPU空闲率:" <<cpuidle << "%" <<endl;
+		//preidleTime = idleTime;
+		//prekernelTime = kernelTime;
+		//preuserTime = userTime;
+		return cpu;
+	}
+};
 
 #endif // !SVRUTIL
