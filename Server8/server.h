@@ -54,6 +54,11 @@ namespace svr {
 		PRI_HIGH
 	};
 
+	enum ServerType {
+		PROCESSOR_SERVER,
+		CONTROLER_SERVER
+	};
+
 	enum ServerOperation {
 		SESSION_CREATE,
 		SESSION_RELEASE,
@@ -228,7 +233,7 @@ public:
 	}
 };
 
-//session内部为一个循环双向队列,由数组实现,元素为指向Event的指针.
+//session内部为一个循环双向队列,由数组实现,元素为Event.
 //销毁session对象时需要使用sessionMap上全局范围的锁, 而不应该使用session内部的sessionLock,
 //因为析构函数会释放sessionLock结构,会出现同步错误问题.
 class svr::Session : public Object {
@@ -581,9 +586,8 @@ public:
 		status = svr::Status::STATUS_READY;
 	}
 
-	//todo
 	~SessionManager() {
-		
+		removeAll();
 	}
 
 	//session map methods
@@ -595,19 +599,70 @@ public:
 			svr::Level level		= svr::Level::LEVEL_USER,
 			svr::Priority pri	= svr::Priority::PRI_MEDIUM)
 	{
-
+		bool ret = false;
+		lock.AcquireExclusive();
+		std::map<string, Session*>::iterator it = sessionMap.find(key);
+		if (svr::Status::STATUS_HALT == status || svr::Status::STATUS_SUSPEND == status) {
+			ret = false;
+		}
+		else if (it != sessionMap.end()) {
+			svr::Session * pSession = new svr::Session(key, maxSize, status, level, pri);
+			std::pair<std::map<string,svr::Session*>::iterator, bool> result
+				= sessionMap.insert(std::pair<string, svr::Session *>(key, pSession));
+			ret = result.second;
+		}
+		lock.ReleaseExclusive();
+		return ret;
 	}
 
-	svr::Session * getSession(const string & key) {
-
+	bool runSessionHandler(const string & key, void (*fun)(svr::Session *, void *), void * arg) {
+		bool ret = false;
+		lock.AcquireShared();
+		std::map<string, Session*>::iterator it = sessionMap.find(key);
+		if ((it != sessionMap.end()) && (svr::Status::STATUS_HALT != status)) {
+			fun(it->second, arg);
+			ret = true;
+		}
+		lock.ReleaseShared();
+		return ret;
 	}
 
 	bool isSessionExsist(const string & key) {
-
+		lock.AcquireShared();
+		bool ret = false;
+		std::map<string, Session*>::iterator it = sessionMap.find(key);
+		if (it != sessionMap.end()) {
+			ret = true;
+		}
+		lock.ReleaseShared();
+		return ret;
 	}
 
 	bool removeSession(const string & key) {
+		bool ret = false;
+		lock.AcquireExclusive();
+		std::map<string, Session*>::iterator it = sessionMap.find(key);
+		if (it != sessionMap.end()) {
+			delete it->second;
+			sessionMap.erase(it);
+			ret = true;
+		}
+		lock.ReleaseExclusive();
+		return ret;
+	}
 
+	void removeAll(void) {
+		lock.AcquireExclusive();
+		std::map<string, Session*>::iterator it = sessionMap.begin();
+		std::map<string, Session*>::iterator end = sessionMap.end();
+		
+		while (it != end) {
+			delete it->second;
+			++it;
+		}
+
+		sessionMap.clear();
+		lock.ReleaseExclusive();
 	}
 
 	//getSessionCount
@@ -669,6 +724,51 @@ public:
 
 class svr::Server : public Object {
 private:
+	//server info
+
 	string instanceName;
-	svr::Status			status;
+	svr::ServerType serverType;
+	int port;
+	int timeout;
+
+	//
+
+	svr::Status	status = svr::Status::STATUS_READY;
+	svr::Session * pServerSession;
+	svr::SessionManager	sessionManager;
+	svrutil::ThreadPool threadPool;
+
+	int eventQueueSize;
+	int bufferSize;
+
+	//deamon functions
+
+	void ControlerDeamonFunction(void);
+
+	void ProcessorDeamonFunction(void);
+
+	//private functions
+
+	Server() {
+
+	}
+
+	Server(const Server &) {
+
+	}
+
+	void operator=(const Server &) {
+
+	}
+
+public:
+
+	Server(const string & name) {
+		
+	}
+
+	~Server() {
+		
+	}
+
 };

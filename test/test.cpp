@@ -38,7 +38,12 @@ int main(void) {
 	//SetThreadpoolTimer(timer, &ft, 500, 50);
 
 	//system("pause");
-
+	Log.write("start");
+	svrutil::SRWLock lock;
+	//lock.AcquireExclusive();
+	lock.AcquireShared();
 	Log.write("ss");
+	lock.ReleaseShared();
+	//lock.ReleaseExclusive();
 	return 0;
 }
