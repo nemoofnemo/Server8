@@ -723,10 +723,19 @@ private:
 	//server info
 
 	struct ServerInfo {
+
+		//common
+
 		string instanceName;
+		string serverIP;
 		svr::ServerType serverType;
 		int port;
 		int timeout;
+
+		//for controler
+
+		svr::Status	status;
+		int responseTime;	//time in ms
 	};
 
 	ServerInfo instanceInfo;
