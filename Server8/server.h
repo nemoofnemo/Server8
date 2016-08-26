@@ -22,10 +22,6 @@ namespace svr {
 	class SessionManager;
 	class Server;
 
-	Interface CallBackInterface{
-		unsigned int __stdcall run(void *);
-	};
-
 	enum ConstVar {
 		DEFAULT_QUEUE_SIZE = 0xAA,		//max size of event queue :	170 Events. 4080 bytes
 		DEFAULT_BUF_SIZ = 0x2000		//default buffer size :			8192 bytes
@@ -726,10 +722,14 @@ class svr::Server : public Object {
 private:
 	//server info
 
-	string instanceName;
-	svr::ServerType serverType;
-	int port;
-	int timeout;
+	struct ServerInfo {
+		string instanceName;
+		svr::ServerType serverType;
+		int port;
+		int timeout;
+	};
+
+	ServerInfo instanceInfo;
 
 	//
 
