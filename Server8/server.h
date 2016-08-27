@@ -719,36 +719,52 @@ public:
 };
 
 class svr::Server : public Object {
-private:
-	//server info
+public:
+
+	//configuration
 
 	struct ServerInfo {
 
 		//common
 
-		string instanceName;
-		string serverIP;
-		svr::ServerType serverType;
-		int port;
-		int timeout;
+		string				instanceName;
+		string				serverIP;
+		svr::ServerType		serverType;
+		int					port;
+		int					timeout;
 
 		//for controler
 
-		svr::Status	status;
-		int responseTime;	//time in ms
+		svr::Status			status;
+		int					responseTime;	//time in ms
+		int					score;
+
+		//connection
+
+		bool				isConnectionReady;
+		SOCKET			connectionSocket;
 	};
 
-	ServerInfo instanceInfo;
+	//configuration
 
-	//
+	ServerInfo				instanceInfo;			
+	ServerInfo				parentNodeInfo;
+	map<string, ServerInfo> childNodeInfoMap;
 
-	svr::Status	status = svr::Status::STATUS_READY;
-	svr::Session * pServerSession;
-	svr::SessionManager	sessionManager;
-	svrutil::ThreadPool threadPool;
+private:
 
-	int eventQueueSize;
-	int bufferSize;
+	//core
+
+	svr::Session *			pServerSession;
+	svr::SessionManager		sessionManager;
+	svrutil::ThreadPool		threadPool;
+
+	int						eventQueueSize;
+	int						bufferSize;
+
+private:
+
+	//private functions
 
 	//deamon functions
 
@@ -756,7 +772,13 @@ private:
 
 	void ProcessorDeamonFunction(void);
 
-	//private functions
+	//work thread
+
+	static void __stdcall ControlerWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
+
+	static void __stdcall ControlerWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
+
+	//not available
 
 	Server() {
 
@@ -779,5 +801,15 @@ public:
 	~Server() {
 		
 	}
+
+	//operation
+
+	int run(void);
+
+	int suspend(void);
+
+	int resume(void);
+
+	int stop(void);
 
 };
