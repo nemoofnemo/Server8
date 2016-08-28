@@ -4,8 +4,10 @@ using namespace svr;
 using namespace svrutil;
 
 int main(void){
-	Log.write("%d %d %d", svrutil::SystemInfo::getCPUUsage(),
-		svrutil::SystemInfo::getMemoryUsage(),
-		svrutil::SystemInfo::getProcessorCount());
+	Server::ServerInfo info;
+	info.instanceName = "test";
+	info.port = 6001;
+	Server server(info);
+	server.run();
 	return 0;
 }

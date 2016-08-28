@@ -768,10 +768,11 @@ private:
 
 	svr::Session *			pServerSession;
 	svr::SessionManager		sessionManager;
-	svrutil::ThreadPool		threadPool;
+	svrutil::ThreadPool		workThreadPool;
+	svrutil::SRWLock		lock;
 
-	static int						eventQueueSize;
-	static int						bufferSize;
+	int						eventQueueSize;
+	int						bufferSize;
 
 	//io completion port
 
@@ -784,8 +785,8 @@ private:
 		IOCPContext() {
 			ZeroMemory(&overlapped, sizeof(OVERLAPPED));
 			sockAccept = INVALID_SOCKET;
-			wsabuf.len = bufferSize;
-			wsabuf.buf = new char[bufferSize];
+			wsabuf.len = svr::ConstVar::DEFAULT_BUF_SIZ;
+			wsabuf.buf = new char[svr::ConstVar::DEFAULT_BUF_SIZ];
 			operation = SIG_NULL;
 		}
 
@@ -840,11 +841,14 @@ private:
 		}
 	};
 
-	HANDLE hIOCP;
-	SocketContext listenSocketContext;
+	HANDLE					hIOCP;
+	SocketContext				listenSocketContext;
+	svrutil::ThreadPool			IOCPThreadPool;
+	CRITICAL_SECTION			socketListLock;
+	std::list<SocketContext*>	socketList;
 
 	//AcceptEx 的函数指针
-	LPFN_ACCEPTEX lpfnAcceptEx;
+	LPFN_ACCEPTEX			lpfnAcceptEx;
 	//GetAcceptExSockaddrs 的函数指针
 	LPFN_GETACCEPTEXSOCKADDRS lpfnGetAcceptExSockAddrs;
 
@@ -910,65 +914,40 @@ private:
 		return true;
 	}
 
-	bool initIOCP(void) {
-		this->LoadSocketLib();
+	bool initIOCP(void);
 
-		listenSocketContext.socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
-		listenSocketContext.sockAddr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
-		listenSocketContext.sockAddr.sin_family = AF_INET;
-		listenSocketContext.sockAddr.sin_port = htons(instanceInfo.port);
+	bool stopIOCP(void);
 
-		hIOCP = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-		if (hIOCP == NULL) {
-			Log.write("[IOCP]:cannot create iocp.");
-			return false;
+	bool PostAccept(IOCPContext * pIC);
+
+	bool DoAccept(SocketContext * pSC, IOCPContext * pIC);
+
+	bool PostRecv(IOCPContext * pSC);
+
+	bool DoRecv(SocketContext * pSC, IOCPContext * pIC);
+
+	bool IsValidOperaton(IOCPOperationSignal t) {
+		if (t >= 0 && t <= 4) {
+			return true;
 		}
 		else {
-			Log.write("[server]:create iocp success.");
-		}
-
-		if (CreateIoCompletionPort((HANDLE)listenSocketContext.socket, hIOCP, (ULONG_PTR)&listenSocketContext, 0) == NULL) {
-			Log.write("[server]:bind iocp error.\n");
 			return false;
 		}
-		else {
-			Log.write("[server]:bind iocp success.\n");
-		}
-
-		if (bind(listenSocketContext.socket, (SOCKADDR*)&listenSocketContext.sockAddr, sizeof(SOCKADDR)) == SOCKET_ERROR) {
-			Log.write("[server]:bind error.\n");
-			return false;
-		}
-		else {
-			Log.write("[server]:bind success.\n");
-		}
-
-		if (listen(listenSocketContext.socket, SOMAXCONN) == SOCKET_ERROR) {
-			Log.write("[server]:listen error.\n");
-			return false;
-		}
-		else {
-			Log.write("[server]:listen success.\n");
-		}
-
-		if (GetFunctionAddress() == false) {
-			Log.write("[server]:get function address failed.\n");
-			return false;
-		}
-		else {
-			Log.write("[server]:get function address success.\n");
-		}
-
-		//thread pool
-
-
-
-		//post SIG_ACCEPT (post accept)
-
-
-
-		return true;
 	}
+
+	void AddSocketContext(SocketContext * pSC) {
+		EnterCriticalSection(&socketListLock);
+		socketList.push_back(pSC);
+		LeaveCriticalSection(&socketListLock);
+	}
+
+	void RemoveSocketContext(SocketContext * pSC) {
+		EnterCriticalSection(&socketListLock);
+		socketList.remove(pSC);
+		RELEASE(pSC);
+		LeaveCriticalSection(&socketListLock);
+	}
+
 
 	//deamon functions
 
@@ -981,6 +960,14 @@ private:
 	static void __stdcall ControlerWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 
 	static void __stdcall ProcessorWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
+
+	struct _WT_PARAM {
+		HANDLE	handle;		//iocp handle
+		Server *	pServer;
+		int			index;
+	};
+
+	static void __stdcall IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 
 	//not available
 
@@ -1007,10 +994,15 @@ public:
 		bufferSize = bufSize;
 		eventQueueSize = queueSize;
 		pServerSession = new Session("server", 682);	//16kb
+		
+		//set thread pool
+
+		InitializeCriticalSectionAndSpinCount(&socketListLock, 4096);
 	}
 
 	~Server() {
 		delete pServerSession;
+		DeleteCriticalSection(&socketListLock);
 	}
 
 	//operation

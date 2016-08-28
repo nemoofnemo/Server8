@@ -544,7 +544,7 @@ private:
 		return;
 	} */
 public:
-	ThreadPool(int min = 1, int max = 4) {
+	ThreadPool(int min = 4, int max = 64) {
 		ThreadMinimum = min;
 		ThreadMaximum = max;
 
@@ -574,10 +574,10 @@ public:
 		CloseThreadpool(pThreadpool);							// ¹Ø±ÕÏß³Ì³Ø
 	}
 
-	bool createWorkThread(PTP_WORK_CALLBACK pf) {
+	bool createWorkThread(PTP_WORK_CALLBACK pf, PVOID pv) {
 		PTP_WORK prev = ptpWork;
 		bool ret = false;
-		ptpWork = CreateThreadpoolWork(pf, NULL, &CallBackEnviron);
+		ptpWork = CreateThreadpoolWork(pf, pv, &CallBackEnviron);
 		
 		if (NULL == ptpWork) {
 			ptpWork = prev;
@@ -632,9 +632,14 @@ public:
 		SetThreadpoolTimer(ptpTimer, pFileTime, period, length);
 	}
 
+	PTP_IO createIOThread(HANDLE h, PTP_WIN32_IO_CALLBACK  pfnio, PVOID pv) {
+		return CreateThreadpoolIo(h, pfnio, pv, &CallBackEnviron);
+	}
+
 	TP_CALLBACK_ENVIRON & getCallbackEnviron(void) {
 		return this->CallBackEnviron;
 	}
+
 };
 
 //memory usage , CPU usage and processor number

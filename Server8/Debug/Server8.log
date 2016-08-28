@@ -1,1 +1,29 @@
-﻿
+﻿  main.cpp
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(34): warning C4244: “=”: 从“LONGLONG”转换到“double”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(66): warning C4244: “参数”: 从“const unsigned __int64”转换到“DWORD”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(339): warning C4800: “BOOL”: 将值强制为布尔值“true”或“false”(性能警告)
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(690): warning C4244: “初始化”: 从“unsigned __int64”转换到“int”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(691): warning C4244: “初始化”: 从“unsigned __int64”转换到“int”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(692): warning C4244: “初始化”: 从“unsigned __int64”转换到“int”，可能丢失数据
+  正在生成代码...
+  正在编译...
+  server.cpp
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(34): warning C4244: “=”: 从“LONGLONG”转换到“double”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(66): warning C4244: “参数”: 从“const unsigned __int64”转换到“DWORD”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(339): warning C4800: “BOOL”: 将值强制为布尔值“true”或“false”(性能警告)
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(690): warning C4244: “初始化”: 从“unsigned __int64”转换到“int”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(691): warning C4244: “初始化”: 从“unsigned __int64”转换到“int”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(692): warning C4244: “初始化”: 从“unsigned __int64”转换到“int”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\server.cpp(138): warning C4996: 'inet_ntoa': Use inet_ntop() or InetNtop() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+  c:\program files (x86)\windows kits\8.1\include\um\winsock2.h(1868): note: 参见“inet_ntoa”的声明
+d:\documents\visual studio 2015\projects\server8\server8\server.cpp(139): warning C4996: 'inet_ntoa': Use inet_ntop() or InetNtop() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+  c:\program files (x86)\windows kits\8.1\include\um\winsock2.h(1868): note: 参见“inet_ntoa”的声明
+d:\documents\visual studio 2015\projects\server8\server8\server.cpp(197): warning C4996: 'inet_ntoa': Use inet_ntop() or InetNtop() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+  c:\program files (x86)\windows kits\8.1\include\um\winsock2.h(1868): note: 参见“inet_ntoa”的声明
+d:\documents\visual studio 2015\projects\server8\server8\server.cpp(228): warning C4996: 'inet_ntoa': Use inet_ntop() or InetNtop() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+  c:\program files (x86)\windows kits\8.1\include\um\winsock2.h(1868): note: 参见“inet_ntoa”的声明
+  正在生成代码...
+  正在跳过...(未检测到相关更改)
+  svrlib.h
+  Server8.vcxproj -> D:\Documents\Visual Studio 2015\Projects\Server8\Debug\Server8.exe
+  Server8.vcxproj -> D:\Documents\Visual Studio 2015\Projects\Server8\Debug\Server8.pdb (Full PDB)
