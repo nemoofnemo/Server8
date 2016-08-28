@@ -21,6 +21,7 @@ namespace svr {
 	class ServerConfig;
 	class SessionManager;
 	class Server;
+	class ServerCallback;
 
 	enum ConstVar {
 		DEFAULT_QUEUE_SIZE = 0xAA,		//max size of event queue :	170 Events. 4080 bytes
@@ -728,6 +729,22 @@ public:
 
 };
 
+//callback
+class svr::ServerCallback : public Object {
+public:
+	ServerCallback() {
+
+	}
+
+	virtual ~ServerCallback() {
+
+	}
+
+	virtual void run(void *) {
+
+	}
+};
+
 //
 class svr::Server : public Object {
 public:
@@ -742,7 +759,8 @@ public:
 		string				serverIP;
 		svr::ServerType		serverType;
 		int					port;
-		int					timeout;
+		int					timeout;		//time in ms
+		int					sessionLiveTime;	//time in ms
 
 		//for controler
 
@@ -754,6 +772,7 @@ public:
 
 		bool				isConnectionReady;
 		SOCKET			connectionSocket;
+
 	};
 
 	//configuration
@@ -777,14 +796,16 @@ private:
 	//io completion port
 
 	struct IOCPContext {
-		OVERLAPPED overlapped;
-		SOCKET sockAccept;
-		WSABUF wsabuf;
-		svr::IOCPOperationSignal operation;
+		OVERLAPPED			overlapped;
+		SOCKET				socket;
+		SOCKADDR_IN			addr;
+		WSABUF				wsabuf;
+		IOCPOperationSignal	operation;
+		std::list<WSABUF>		dataList;
 
 		IOCPContext() {
 			ZeroMemory(&overlapped, sizeof(OVERLAPPED));
-			sockAccept = INVALID_SOCKET;
+			socket = INVALID_SOCKET;
 			wsabuf.len = svr::ConstVar::DEFAULT_BUF_SIZ;
 			wsabuf.buf = new char[svr::ConstVar::DEFAULT_BUF_SIZ];
 			operation = SIG_NULL;
@@ -792,7 +813,7 @@ private:
 
 		~IOCPContext() {
 			delete[] wsabuf.buf;
-			RELEASE_SOCKET(sockAccept);
+			RELEASE_SOCKET(socket);
 		}
 
 		void ResetBuffer(void) {
@@ -800,52 +821,14 @@ private:
 		}
 	};
 
-	class SocketContext {
-	public:
-		SOCKET socket;
-		SOCKADDR_IN sockAddr;
-		std::list<IOCPContext*> contextList;
-
-		SocketContext() {
-			socket = INVALID_SOCKET;
-			ZeroMemory(&sockAddr, sizeof(SOCKADDR_IN));
-		}
-
-		~SocketContext() {
-			std::list<IOCPContext*>::iterator end = contextList.end();
-
-			for (std::list<IOCPContext*>::iterator it = contextList.begin(); it != end; it++) {
-				RELEASE(*it);
-			}
-			contextList.clear();
-
-			RELEASE_SOCKET(socket);
-		}
-
-		IOCPContext * CreateIOCPContext(void) {
-			IOCPContext * ret = new IOCPContext;
-			contextList.push_back(ret);
-			return ret;
-		}
-
-		void RemoveContext(IOCPContext * ptr) {
-			std::list<IOCPContext*>::iterator end = contextList.end();
-
-			for (std::list<IOCPContext*>::iterator it = contextList.begin(); it != end; it++) {
-				if (ptr == *it) {
-					RELEASE(ptr);
-					contextList.erase(it);
-					break;
-				}
-			}
-		}
-	};
-
 	HANDLE					hIOCP;
-	SocketContext				listenSocketContext;
+	SOCKET					svrSocket;
+	SOCKADDR_IN				svrAddr;
+	std::list<IOCPContext*>	socketPool;
+	std::map<SOCKET, IOCPContext*>	contextMap;
+
+	svrutil::SRWLock			IOCPLock;
 	svrutil::ThreadPool			IOCPThreadPool;
-	CRITICAL_SECTION			socketListLock;
-	std::list<SocketContext*>	socketList;
 
 	//AcceptEx 的函数指针
 	LPFN_ACCEPTEX			lpfnAcceptEx;
@@ -880,51 +863,19 @@ private:
 	}
 
 	//get address of acceptex and getacceptexsockaddrs
-	bool GetFunctionAddress(void) {
-		GUID guid = WSAID_ACCEPTEX;        // GUID，这个是识别AcceptEx函数必须的
-		DWORD dwBytes = 0;
-
-		//1
-
-		int iResult = WSAIoctl(listenSocketContext.socket, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid,
-			sizeof(guid), &lpfnAcceptEx, sizeof(lpfnAcceptEx), &dwBytes,
-			NULL, NULL);
-		if (iResult == INVALID_SOCKET) {
-			Log.write("[server]:init accept ex error.\n");
-			return false;
-		}
-		else {
-			Log.write("[server]:init accept ex success.\n");
-		}
-
-		//2
-
-		guid = WSAID_GETACCEPTEXSOCKADDRS;
-		iResult = WSAIoctl(listenSocketContext.socket, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid,
-			sizeof(guid), &lpfnGetAcceptExSockAddrs, sizeof(lpfnGetAcceptExSockAddrs), &dwBytes,
-			NULL, NULL);
-		if (iResult == INVALID_SOCKET) {
-			Log.write("[server]:init sockaddr ex error.\n");
-			return false;
-		}
-		else {
-			Log.write("[server]:init sockaddr ex success.\n");
-		}
-
-		return true;
-	}
+	bool GetFunctionAddress(void);
 
 	bool initIOCP(void);
 
 	bool stopIOCP(void);
 
-	bool PostAccept(IOCPContext * pIC);
+	bool postAccept(IOCPContext * pIC);
 
-	bool DoAccept(SocketContext * pSC, IOCPContext * pIC);
+	bool doAccept(IOCPContext * pIC);
 
-	bool PostRecv(IOCPContext * pSC);
+	bool postRecv(IOCPContext * pIC);
 
-	bool DoRecv(SocketContext * pSC, IOCPContext * pIC);
+	bool doRecv(IOCPContext * pIC);
 
 	bool IsValidOperaton(IOCPOperationSignal t) {
 		if (t >= 0 && t <= 4) {
@@ -934,20 +885,6 @@ private:
 			return false;
 		}
 	}
-
-	void AddSocketContext(SocketContext * pSC) {
-		EnterCriticalSection(&socketListLock);
-		socketList.push_back(pSC);
-		LeaveCriticalSection(&socketListLock);
-	}
-
-	void RemoveSocketContext(SocketContext * pSC) {
-		EnterCriticalSection(&socketListLock);
-		socketList.remove(pSC);
-		RELEASE(pSC);
-		LeaveCriticalSection(&socketListLock);
-	}
-
 
 	//deamon functions
 
@@ -961,7 +898,7 @@ private:
 
 	static void __stdcall ProcessorWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 
-	struct _WT_PARAM {
+	struct IOCP_WORKTHREAD_PARAM {
 		HANDLE	handle;		//iocp handle
 		Server *	pServer;
 		int			index;
@@ -997,12 +934,10 @@ public:
 		
 		//set thread pool
 
-		InitializeCriticalSectionAndSpinCount(&socketListLock, 4096);
 	}
 
 	~Server() {
 		delete pServerSession;
-		DeleteCriticalSection(&socketListLock);
 	}
 
 	//operation
@@ -1015,4 +950,5 @@ public:
 
 	int stop(void);
 
+	int status(void);
 };

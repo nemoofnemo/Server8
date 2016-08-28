@@ -6,32 +6,67 @@ LogModule Log("console");
 LogModule Log("./server.log");
 #endif
 
+bool svr::Server::GetFunctionAddress(void){
+	GUID guid = WSAID_ACCEPTEX;        // GUID，这个是识别AcceptEx函数必须的
+	DWORD dwBytes = 0;
+
+	//1
+
+	int iResult = WSAIoctl(svrSocket, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid,
+		sizeof(guid), &lpfnAcceptEx, sizeof(lpfnAcceptEx), &dwBytes,
+		NULL, NULL);
+	if (iResult == INVALID_SOCKET) {
+		Log.write("[server]:init accept ex error.");
+		return false;
+	}
+	else {
+		Log.write("[server]:init accept ex success.");
+	}
+
+	//2
+
+	guid = WSAID_GETACCEPTEXSOCKADDRS;
+	iResult = WSAIoctl(svrSocket, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid,
+		sizeof(guid), &lpfnGetAcceptExSockAddrs, sizeof(lpfnGetAcceptExSockAddrs), &dwBytes,
+		NULL, NULL);
+	if (iResult == INVALID_SOCKET) {
+		Log.write("[server]:init sockaddr ex error.");
+		return false;
+	}
+	else {
+		Log.write("[server]:init sockaddr ex success.");
+	}
+
+	return true;
+}
+
 bool svr::Server::initIOCP(void){
 	this->LoadSocketLib();
-
-	listenSocketContext.socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
-	listenSocketContext.sockAddr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
-	listenSocketContext.sockAddr.sin_family = AF_INET;
-	listenSocketContext.sockAddr.sin_port = htons(instanceInfo.port);
-
+	svrSocket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+	svrAddr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
+	svrAddr.sin_family = AF_INET;
+	svrAddr.sin_port = htons(instanceInfo.port);
+	
+	//create iocp
 	hIOCP = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-	if (hIOCP == NULL) {
-		Log.write("[IOCP]:cannot create iocp.");
+	if (hIOCP != NULL) {
+		Log.write("[IOCP]: in initIOCP create iocp success.");
+	}
+	else {
+		Log.write("[IOCP]: in initIOCP create iocp failed.");
+		return false;
+	}
+
+	//bind iocp
+	if (CreateIoCompletionPort((HANDLE)svrSocket, hIOCP, (ULONG_PTR)this, 0) == NULL) {
+		Log.write("[IOCP]: in initIOCP bind iocp failed.");
 		return false;
 	}
 	else {
-		Log.write("[server]:create iocp success.");
+		Log.write("[IOCP]: in initIOCP bind iocp success.");
 	}
 
-	if (CreateIoCompletionPort((HANDLE)listenSocketContext.socket, hIOCP, (ULONG_PTR)&listenSocketContext, 0) == NULL) {
-		Log.write("[server]:bind iocp error.");
-		return false;
-	}
-	else {
-		Log.write("[server]:bind iocp success.");
-	}
-
-	if (bind(listenSocketContext.socket, (SOCKADDR*)&listenSocketContext.sockAddr, sizeof(SOCKADDR)) == SOCKET_ERROR) {
+	if (bind(svrSocket, (SOCKADDR*)&svrAddr, sizeof(SOCKADDR)) == SOCKET_ERROR) {
 		Log.write("[server]:bind error.");
 		return false;
 	}
@@ -39,7 +74,7 @@ bool svr::Server::initIOCP(void){
 		Log.write("[server]:bind success.");
 	}
 
-	if (listen(listenSocketContext.socket, SOMAXCONN) == SOCKET_ERROR) {
+	if (listen(svrSocket, SOMAXCONN) == SOCKET_ERROR) {
 		Log.write("[server]:listen error.");
 		return false;
 	}
@@ -55,71 +90,49 @@ bool svr::Server::initIOCP(void){
 		Log.write("[server]:get function address success.");
 	}
 
-	//IOCP thread pool
-	_WT_PARAM * pArg = new _WT_PARAM;	//warning : memory leak
-	pArg->pServer = this;
-	pArg->handle = hIOCP;
-	pArg->index = 0;
-	IOCPThreadPool.createWorkThread(IOCPWorkThread, pArg);
+	//iocp thread pool
+
+	IOCP_WORKTHREAD_PARAM * arg = new IOCP_WORKTHREAD_PARAM;
+	arg->handle = hIOCP;
+	arg->index = 0;
+	arg->pServer = this;
+	IOCPThreadPool.createWorkThread(IOCPWorkThread, arg);
+
 	for (int i = 0; i < 4; ++i) {
 		IOCPThreadPool.submitWork();
 	}
 
-	//post SIG_ACCEPT (post accept)
+	//post accept
 
 	for (int i = 0; i < 32; ++i) {
-		IOCPContext * pIC = listenSocketContext.CreateIOCPContext();
-		if (PostAccept(pIC)) {
-
-		}
-		else {
-			Log.write("[server]:post error in thread %d", i);
-			listenSocketContext.RemoveContext(pIC);
-		}
+		IOCPContext * pContext = new IOCPContext;
+		postAccept(pContext);
+		socketPool.push_back(pContext);
 	}
 
-	return true;
+	return false;
 }
 
-bool svr::Server::stopIOCP(void){
-
-	EnterCriticalSection(&socketListLock);
-	std::list<IOCPContext*>::iterator it2 = listenSocketContext.contextList.begin();
-	while (it2 != listenSocketContext.contextList.end()) {
-		RELEASE(*it2);
-		it2++;
-	}
-	listenSocketContext.contextList.clear();
-	LeaveCriticalSection(&socketListLock);
-
-	RELEASE_SOCKET(listenSocketContext.socket);
-	CloseHandle(hIOCP);
-	Log.write("[server]:iocp exit success");
-	return true;
-}
-
-bool svr::Server::PostAccept(IOCPContext * pIC){
-	if (pIC == NULL || listenSocketContext.socket == INVALID_SOCKET) {
+bool svr::Server::postAccept(IOCPContext * pIC){
+	if (NULL == pIC || INVALID_SOCKET == svrSocket)
 		return false;
-	}
-
+	
 	DWORD dwBytes = 0;
 	pIC->operation = SIG_ACCEPT;
-
-	// 为以后新连入的客户端先准备好Socket( 这个是与传统accept最大的区别 )
-	pIC->sockAccept = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
-	if (pIC->sockAccept == INVALID_SOCKET) {
+	
+	pIC->socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
+	if (pIC->socket == INVALID_SOCKET) {
 		Log.write("[server]:in postaccept,invalid socket");
 		return false;
 	}
 
-	if (lpfnAcceptEx(listenSocketContext.socket, pIC->sockAccept, pIC->wsabuf.buf, pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2) - 1, sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &dwBytes, &pIC->overlapped) == FALSE) {
-		//if WSAGetLastError == WSA_IO_PENDING
-		//	io is still working normally.
-		// dont return false!!!!
+	//if WSAGetLastError == WSA_IO_PENDING
+	//	io is still working normally.
+	// dont return false!!!!
+	if (lpfnAcceptEx(svrSocket, pIC->socket, pIC->wsabuf.buf, pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2) - 1, sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &dwBytes, &pIC->overlapped) == FALSE) {
 		if (WSA_IO_PENDING != WSAGetLastError()) {
-			Log.write("[server]:in postAccept,acceptex error code=%d.", WSAGetLastError());
-			RELEASE_SOCKET(pIC->sockAccept);
+			Log.write("[server]:in postaccept,acceptex error code=%d.", WSAGetLastError());
+			RELEASE_SOCKET(pIC->socket);
 			return false;
 		}
 	}
@@ -127,50 +140,48 @@ bool svr::Server::PostAccept(IOCPContext * pIC){
 	return true;
 }
 
-bool svr::Server::DoAccept(SocketContext * pSC, IOCPContext * pIC){
+bool svr::Server::doAccept(IOCPContext * pIC){
 	SOCKADDR_IN* clientAddr = NULL;
 	SOCKADDR_IN* localAddr = NULL;
 	int remoteLen = sizeof(SOCKADDR_IN), localLen = sizeof(SOCKADDR_IN);
 
-	// 1. 首先取得连入客户端的地址信息
+	//1.get client info
 	lpfnGetAcceptExSockAddrs(pIC->wsabuf.buf, pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2), sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, (LPSOCKADDR*)&localAddr, &localLen, (LPSOCKADDR*)&clientAddr, &remoteLen);
 
 	Log.write(("[client]: %s:%d connect."), inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port));
-	Log.write("[client]: %s:%d \ncontent:%s.", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), pIC->wsabuf.buf);
+	Log.write("[client]: %s:%d\ncontent:%s.", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), pIC->wsabuf.buf);
 
-	// 2. 这里需要注意，这里传入的这个是ListenSocket上的SocketContext，这个Context我们还需要用于监听下一个连接
-	SocketContext * pSocketContext = new SocketContext;
-	pSocketContext->socket = pIC->sockAccept;
-	memcpy(&(pSocketContext->sockAddr), clientAddr, sizeof(SOCKADDR_IN));
-	// 参数设置完毕，将这个Socket和完成端口绑定(这也是一个关键步骤)
-	if (CreateIoCompletionPort((HANDLE)pSocketContext->socket, hIOCP, (ULONG_PTR)pSocketContext, 0) == NULL) {
-		RemoveSocketContext(pSocketContext);
-		Log.write("[server]:in doaccept,iocp failed");
+	// 2. 
+	IOCPContext * pContext = new IOCPContext;
+	pContext->socket = pIC->socket;
+	pContext->operation = SIG_RECV;
+	memcpy(&(pContext->addr), clientAddr, sizeof(SOCKADDR_IN));
+	if (CreateIoCompletionPort((HANDLE)pContext->socket, hIOCP, (ULONG_PTR)this, 0) == NULL) {
+		delete pContext;
+		Log.write("[IOCP]:in doaccept,iocp failed");
 		return false;
 	}
 
-	// 3. 继续，建立其下的IoContext，用于在这个Socket上投递第一个Recv数据请求
-	IOCPContext * pIOCPContext = pSocketContext->CreateIOCPContext();
-	pIOCPContext->operation = SIG_RECV;
-	pIOCPContext->sockAccept = pSocketContext->socket;
-	// 如果Buffer需要保留，就自己拷贝一份出来
-	if (PostRecv(pIOCPContext) == false) {
-		pSocketContext->RemoveContext(pIOCPContext);
-		Log.write("[server]:in doaccept,post failed");
+	//3.
+	if (postRecv(pContext) == false) {
+		delete pContext;
+		Log.write("[IOCP]:in doaccept,post failed");
 		return false;
 	}
 	else {
-		// 4. 如果投递成功，那么就把这个有效的客户端信息，加入到ContextList中去(需要统一管理，方便释放资源)
-		AddSocketContext(pSocketContext);
+		// 4. 如果投递成功，那么就把这个有效的客户端信息，加入到ContextMap
+		//(需要统一管理，方便释放资源)
+		IOCPLock.AcquireExclusive();
+		contextMap.insert(std::pair<SOCKET, IOCPContext*>(pContext->socket, pContext));
+		IOCPLock.ReleaseExclusive();
 	}
 
 	// 5. 使用完毕之后，把Listen Socket的那个IoContext重置，然后准备投递新的AcceptEx
 	pIC->ResetBuffer();
-	return PostAccept(pIC);
+	return postAccept(pIC);
 }
 
-bool svr::Server::PostRecv(IOCPContext * pIC){
-	// 初始化变量
+bool svr::Server::postRecv(IOCPContext * pIC){
 	DWORD dwFlags = 0;
 	DWORD dwBytes = 0;
 	WSABUF *pWSAbuf = &pIC->wsabuf;
@@ -180,93 +191,87 @@ bool svr::Server::PostRecv(IOCPContext * pIC){
 	pIC->operation = SIG_RECV;
 
 	// 初始化完成后，，投递WSARecv请求
-	int nBytesRecv = WSARecv(pIC->sockAccept, pWSAbuf, 1, &dwBytes, &dwFlags, pOl, NULL);
+	int nBytesRecv = WSARecv(pIC->socket, pWSAbuf, 1, &dwBytes, &dwFlags, pOl, NULL);
 
 	// 如果返回值错误，并且错误的代码并非是Pending的话，那就说明这个重叠请求失败了
 	if ((SOCKET_ERROR == nBytesRecv) && (WSA_IO_PENDING != WSAGetLastError()))
 	{
-		Log.write("[server]:in postrecv , post failed");
+		Log.write("[IOCP]:in postrecv , post failed");
 		return false;
 	}
 
 	return true;
 }
 
-bool svr::Server::DoRecv(SocketContext * pSC, IOCPContext * pIC){
-	SOCKADDR_IN* ClientAddr = &pSC->sockAddr;
-	Log.write("[client]:  %s:%dcontent:%s", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), pIC->wsabuf.buf);
+bool svr::Server::doRecv(IOCPContext * pIC)
+{
+	SOCKADDR_IN* ClientAddr = &pIC->addr;
+	Log.write("[client]:  %s:%d\ncontent:%s\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), pIC->wsabuf.buf);
 	// 然后开始投递下一个WSARecv请求
-	return PostRecv(pIC);
+	return postRecv(pIC);
 }
 
 void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work){
-	_WT_PARAM * pArg = (_WT_PARAM *)Parameter;
-	Server * pServer = pArg->pServer;
-
+	IOCP_WORKTHREAD_PARAM arg = *((IOCP_WORKTHREAD_PARAM*)Parameter);
 	OVERLAPPED * pOverlapped = NULL;
-	SocketContext * pSocketContext = NULL;
 	DWORD dwBytesTransfered = 0;
-	Log.write("[server]:thread %d start success", pArg->index);
+	DWORD threadID = GetCurrentThreadId();
+	Server * pServer;
+
+	Log.write("[IOCP]:threadID %d start success", threadID);
 
 	while (true) {
-		BOOL flag = GetQueuedCompletionStatus(pArg->handle, &dwBytesTransfered, (PULONG_PTR)&pSocketContext, &pOverlapped, INFINITE);
+		BOOL flag = GetQueuedCompletionStatus(arg.handle, &dwBytesTransfered, (PULONG_PTR)&pServer, &pOverlapped, INFINITE);
 
-		// 判断是否出现了错误
+		//error
 		if (!flag) {
+			//show error
 			//todo
-			//show error message
-			Log.write("[server]:thread %d iocp status error", pArg->index);
+			continue;
+		}
+		
+		IOCPContext * pIC = CONTAINING_RECORD(pOverlapped, IOCPContext, overlapped);
+		Log.write("[IOCP]:threadID %d io request", threadID);
+
+		if ((dwBytesTransfered == 0) && pServer->IsValidOperaton(pIC->operation)) {
+			Log.write("[client]: %s:%d disconnect.\n", inet_ntoa(pIC->addr.sin_addr), ntohs(pIC->addr.sin_port));
+
+			// 释放掉对应的资源
+			//todo
+			pServer->contextMap.erase(pIC->socket);
 			continue;
 		}
 		else {
-			// 读取传入的参数
-			IOCPContext * pIC = CONTAINING_RECORD(pOverlapped, IOCPContext, overlapped);
-			//Log.write("[server]: io request in thread %d", pArg->index);
+			pIC->wsabuf.buf[dwBytesTransfered] = '\0';
 
-			// 判断是否有客户端断开了
-			if ((dwBytesTransfered == 0) && pServer->IsValidOperaton(pIC->operation)) {
-				Log.write("[client]: %s:%d disconnect.", inet_ntoa(pSocketContext->sockAddr.sin_addr), ntohs(pSocketContext->sockAddr.sin_port));
+			switch (pIC->operation) {
+			case SIG_ACCEPT:
+				pServer->doAccept(pIC);
+				break;
+			case SIG_RECV:
+				pServer->doRecv(pIC);
+				break;
+			case SIG_SEND:
 
-				// 释放掉对应的资源
-				pServer->RemoveSocketContext(pSocketContext);
-				continue;
+				break;
+			case SIG_NULL:
+
+				break;
+			case SIG_EXIT:
+				Log.write("[server]:exit signal received.\n");
+				RELEASE(pIC);
+				return;
+			default:
+				Log.write("[server]:invalid signal received.thread exit unnormally\n");
+				return;
 			}
-			else {
-				pIC->wsabuf.buf[dwBytesTransfered] = '\0';
-
-				switch (pIC->operation) {
-				case SIG_ACCEPT:
-					pServer->DoAccept(pSocketContext, pIC);
-					break;
-				case SIG_RECV:
-					pServer->DoRecv(pSocketContext, pIC);
-					break;
-				case SIG_SEND:
-
-					break;
-				case SIG_NULL:
-
-					break;
-				case SIG_EXIT:
-					Log.write("[server]:exit signal received.");
-					RELEASE(pArg);
-					RELEASE(pIC);
-					return;
-				default:
-					Log.write("[server]:invalid signal received.thread exit unnormally");
-					return;
-				}
-			}
-			//flag
 		}
-		//in main loop
 	}
 
-	delete pArg;
 }
 
 int svr::Server::run(void){
-	this->initIOCP();
+	initIOCP();
 
 	while (true) {
 		Sleep(500);
