@@ -216,7 +216,7 @@ void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 	OVERLAPPED * pOverlapped = NULL;
 	DWORD dwBytesTransfered = 0;
 	DWORD threadID = GetCurrentThreadId();
-	Server * pServer;
+	Server * pServer = arg.pServer;
 
 	Log.write("[IOCP]:threadID %d start success", threadID);
 
@@ -224,24 +224,32 @@ void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 		BOOL flag = GetQueuedCompletionStatus(arg.handle, &dwBytesTransfered, (PULONG_PTR)&pServer, &pOverlapped, INFINITE);
 
 		//error
-		if (!flag) {
+		if (!flag || !pOverlapped) {
 			//show error
 			//todo
+			Log.write("[IOCP]:threadID %d flag error", threadID);
 			continue;
 		}
 		
 		IOCPContext * pIC = CONTAINING_RECORD(pOverlapped, IOCPContext, overlapped);
-		Log.write("[IOCP]:threadID %d io request", threadID);
+		Log.write("[IOCP]:threadID %d io request %d bytes", threadID, dwBytesTransfered);
 
 		if ((dwBytesTransfered == 0) && pServer->IsValidOperaton(pIC->operation)) {
-			Log.write("[client]: %s:%d disconnect.\n", inet_ntoa(pIC->addr.sin_addr), ntohs(pIC->addr.sin_port));
+			Log.write("[client]: %s:%d disconnect.", inet_ntoa(pIC->addr.sin_addr), ntohs(pIC->addr.sin_port));
 
 			// 释放掉对应的资源
 			//todo
+			pServer->IOCPLock.AcquireExclusive();
+			std::map<SOCKET, IOCPContext*>::iterator it;
+			it = pServer->contextMap.find(pIC->socket);
+			closesocket(it->first);
+			delete it->second;
 			pServer->contextMap.erase(pIC->socket);
+			pServer->IOCPLock.ReleaseExclusive();
 			continue;
 		}
 		else {
+			//warning
 			pIC->wsabuf.buf[dwBytesTransfered] = '\0';
 
 			switch (pIC->operation) {
