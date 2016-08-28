@@ -24,7 +24,8 @@ namespace svr {
 
 	enum ConstVar {
 		DEFAULT_QUEUE_SIZE = 0xAA,		//max size of event queue :	170 Events. 4080 bytes
-		DEFAULT_BUF_SIZ = 0x2000		//default buffer size :			8192 bytes
+		DEFAULT_BUF_SIZ = 0x2000,		//default buffer size :			8192 bytes
+		DEFAULT_LISTEN_PORT = 6001		//server port. 6001
 	};
 
 	enum Level {
@@ -63,6 +64,14 @@ namespace svr {
 		MAN_PAUSE,
 		MAN_STOP,
 		MAN_CONTINUE
+	};
+
+	enum IOCPOperationSignal {
+		SIG_NULL,
+		SIG_ACCEPT,
+		SIG_RECV,
+		SIG_SEND,
+		SIG_EXIT
 	};
 
 	enum ErrorCode {
@@ -561,6 +570,7 @@ public:
 	}
 };
 
+//
 class svr::SessionManager : public Object {
 private:
 	svr::Status			status;
@@ -718,6 +728,7 @@ public:
 
 };
 
+//
 class svr::Server : public Object {
 public:
 
@@ -759,12 +770,205 @@ private:
 	svr::SessionManager		sessionManager;
 	svrutil::ThreadPool		threadPool;
 
-	int						eventQueueSize;
-	int						bufferSize;
+	static int						eventQueueSize;
+	static int						bufferSize;
+
+	//io completion port
+
+	struct IOCPContext {
+		OVERLAPPED overlapped;
+		SOCKET sockAccept;
+		WSABUF wsabuf;
+		svr::IOCPOperationSignal operation;
+
+		IOCPContext() {
+			ZeroMemory(&overlapped, sizeof(OVERLAPPED));
+			sockAccept = INVALID_SOCKET;
+			wsabuf.len = bufferSize;
+			wsabuf.buf = new char[bufferSize];
+			operation = SIG_NULL;
+		}
+
+		~IOCPContext() {
+			delete[] wsabuf.buf;
+			RELEASE_SOCKET(sockAccept);
+		}
+
+		void ResetBuffer(void) {
+			ZeroMemory(this->wsabuf.buf, svr::ConstVar::DEFAULT_BUF_SIZ);
+		}
+	};
+
+	class SocketContext {
+	public:
+		SOCKET socket;
+		SOCKADDR_IN sockAddr;
+		std::list<IOCPContext*> contextList;
+
+		SocketContext() {
+			socket = INVALID_SOCKET;
+			ZeroMemory(&sockAddr, sizeof(SOCKADDR_IN));
+		}
+
+		~SocketContext() {
+			std::list<IOCPContext*>::iterator end = contextList.end();
+
+			for (std::list<IOCPContext*>::iterator it = contextList.begin(); it != end; it++) {
+				RELEASE(*it);
+			}
+			contextList.clear();
+
+			RELEASE_SOCKET(socket);
+		}
+
+		IOCPContext * CreateIOCPContext(void) {
+			IOCPContext * ret = new IOCPContext;
+			contextList.push_back(ret);
+			return ret;
+		}
+
+		void RemoveContext(IOCPContext * ptr) {
+			std::list<IOCPContext*>::iterator end = contextList.end();
+
+			for (std::list<IOCPContext*>::iterator it = contextList.begin(); it != end; it++) {
+				if (ptr == *it) {
+					RELEASE(ptr);
+					contextList.erase(it);
+					break;
+				}
+			}
+		}
+	};
+
+	HANDLE hIOCP;
+	SocketContext listenSocketContext;
+
+	//AcceptEx 的函数指针
+	LPFN_ACCEPTEX lpfnAcceptEx;
+	//GetAcceptExSockaddrs 的函数指针
+	LPFN_GETACCEPTEXSOCKADDRS lpfnGetAcceptExSockAddrs;
 
 private:
 
 	//private functions
+
+	//socket and iocp functions
+
+	bool LoadSocketLib(void) {
+		{
+			WSADATA wsaData;
+			if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+				Log.write("[IOCP]:cannot start wsa .");
+				return false;
+			}
+
+			if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2) {
+				WSACleanup();
+				Log.write("[IOCP]:cannot start wsa .");
+				return false;
+			}
+			return true;
+		}
+	}
+
+	void UnloadSocketLib(void) {
+		WSACleanup();
+	}
+
+	//get address of acceptex and getacceptexsockaddrs
+	bool GetFunctionAddress(void) {
+		GUID guid = WSAID_ACCEPTEX;        // GUID，这个是识别AcceptEx函数必须的
+		DWORD dwBytes = 0;
+
+		//1
+
+		int iResult = WSAIoctl(listenSocketContext.socket, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid,
+			sizeof(guid), &lpfnAcceptEx, sizeof(lpfnAcceptEx), &dwBytes,
+			NULL, NULL);
+		if (iResult == INVALID_SOCKET) {
+			Log.write("[server]:init accept ex error.\n");
+			return false;
+		}
+		else {
+			Log.write("[server]:init accept ex success.\n");
+		}
+
+		//2
+
+		guid = WSAID_GETACCEPTEXSOCKADDRS;
+		iResult = WSAIoctl(listenSocketContext.socket, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid,
+			sizeof(guid), &lpfnGetAcceptExSockAddrs, sizeof(lpfnGetAcceptExSockAddrs), &dwBytes,
+			NULL, NULL);
+		if (iResult == INVALID_SOCKET) {
+			Log.write("[server]:init sockaddr ex error.\n");
+			return false;
+		}
+		else {
+			Log.write("[server]:init sockaddr ex success.\n");
+		}
+
+		return true;
+	}
+
+	bool initIOCP(void) {
+		this->LoadSocketLib();
+
+		listenSocketContext.socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+		listenSocketContext.sockAddr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
+		listenSocketContext.sockAddr.sin_family = AF_INET;
+		listenSocketContext.sockAddr.sin_port = htons(instanceInfo.port);
+
+		hIOCP = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
+		if (hIOCP == NULL) {
+			Log.write("[IOCP]:cannot create iocp.");
+			return false;
+		}
+		else {
+			Log.write("[server]:create iocp success.");
+		}
+
+		if (CreateIoCompletionPort((HANDLE)listenSocketContext.socket, hIOCP, (ULONG_PTR)&listenSocketContext, 0) == NULL) {
+			Log.write("[server]:bind iocp error.\n");
+			return false;
+		}
+		else {
+			Log.write("[server]:bind iocp success.\n");
+		}
+
+		if (bind(listenSocketContext.socket, (SOCKADDR*)&listenSocketContext.sockAddr, sizeof(SOCKADDR)) == SOCKET_ERROR) {
+			Log.write("[server]:bind error.\n");
+			return false;
+		}
+		else {
+			Log.write("[server]:bind success.\n");
+		}
+
+		if (listen(listenSocketContext.socket, SOMAXCONN) == SOCKET_ERROR) {
+			Log.write("[server]:listen error.\n");
+			return false;
+		}
+		else {
+			Log.write("[server]:listen success.\n");
+		}
+
+		if (GetFunctionAddress() == false) {
+			Log.write("[server]:get function address failed.\n");
+			return false;
+		}
+		else {
+			Log.write("[server]:get function address success.\n");
+		}
+
+		//thread pool
+
+
+
+		//post SIG_ACCEPT (post accept)
+
+
+
+		return true;
+	}
 
 	//deamon functions
 
@@ -776,7 +980,7 @@ private:
 
 	static void __stdcall ControlerWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 
-	static void __stdcall ControlerWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
+	static void __stdcall ProcessorWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 
 	//not available
 
@@ -794,12 +998,19 @@ private:
 
 public:
 
-	Server(const string & name) {
-		
+	Server(
+		const ServerInfo & info, 
+		int bufSize = svr::ConstVar::DEFAULT_BUF_SIZ, 
+		int queueSize = svr::ConstVar::DEFAULT_QUEUE_SIZE) : 
+		instanceInfo(info)
+	{
+		bufferSize = bufSize;
+		eventQueueSize = queueSize;
+		pServerSession = new Session("server", 682);	//16kb
 	}
 
 	~Server() {
-		
+		delete pServerSession;
 	}
 
 	//operation

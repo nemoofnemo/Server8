@@ -11,6 +11,7 @@
 #include <process.h>
 #include <Winsock2.h>
 #include <Windows.h>
+#include <mswsock.h>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -22,6 +23,7 @@
 #include <map>
 
 #pragma comment(lib, "ws2_32.lib") 
+#pragma comment(lib, "mswsock.lib") 
 
 //detect memory leak
 
@@ -44,8 +46,15 @@
 //interface
 #define Interface struct
 
+#ifndef RELEASE
 //release a pointer
 #define RELEASE(X) {if(!(X)){delete (X);(X) = NULL;}}
+#endif
+
+#ifndef RELEASE_SOCKET
+//  Õ∑≈Socket∫Í
+#define RELEASE_SOCKET(x){if(x !=INVALID_SOCKET) { closesocket(x);x=INVALID_SOCKET;}}
+#endif
 
 //class Object should be base class of every other class.
 class Object {
