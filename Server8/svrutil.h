@@ -57,8 +57,15 @@ public:
 		}
 	}
 
-	//stop timer and return internal time in milliseconds
+	//stop timer and return interval time in milliseconds
 	unsigned long long stop(void) {
+		if (!QueryPerformanceCounter(&large_interger)) {
+			exit(TIMER_MODULE_ERROR);
+		}
+		return unsigned long long((large_interger.QuadPart - time.QuadPart) * 1000 / freq);
+	}
+
+	unsigned long long getInterval(void) {
 		if (!QueryPerformanceCounter(&large_interger)) {
 			exit(TIMER_MODULE_ERROR);
 		}
