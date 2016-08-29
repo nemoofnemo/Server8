@@ -14,6 +14,7 @@ namespace svrutil {
 	class ThreadPool;
 	class MD5;
 	class SystemInfo;
+	class TimeStamp;
 };
 
 //定时器
@@ -265,11 +266,11 @@ public:
 	//当路径为"console"时,不缓冲,直接输出到控制台.
 	int write(const char * str, ...) {
 		int num = 0;
-		char timeStamp[32] = "";//char timeStamp[] = "[YYYY/MM/DD-HH:MM:SS:mmmm]: ";
+		char timeStamp[32] = "";//char timeStamp[] = "[YYYY/MM/DD-HH:MM:SS:mmm]: ";
 
 		SYSTEMTIME systemTime;
 		GetSystemTime(&systemTime);
-		sprintf_s<32>(timeStamp, "[%04d/%02d/%02d %02d:%02d:%02d:%04d]: ", systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond, systemTime.wMilliseconds);
+		sprintf_s<32>(timeStamp, "[%04d/%02d/%02d %02d:%02d:%02d:%03d]: ", systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond, systemTime.wMilliseconds);
 
 		string format(timeStamp);
 		format += str;
@@ -697,6 +698,20 @@ public:
 		//prekernelTime = kernelTime;
 		//preuserTime = userTime;
 		return cpu;
+	}
+};
+
+//create time stamp
+class svrutil::TimeStamp : public Object {
+public:
+	static string create(void) {
+		char timeStamp[32] = "";//char timeStamp[] = "YYYY/MM/DD-HH:MM:SS:mmm";
+		SYSTEMTIME systemTime;
+
+		GetSystemTime(&systemTime);
+		sprintf_s<32>(timeStamp, "%04d/%02d/%02d %02d:%02d:%02d:%03d", systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond, systemTime.wMilliseconds);
+
+		return string(timeStamp);
 	}
 };
 

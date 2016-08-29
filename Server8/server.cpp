@@ -92,11 +92,7 @@ bool svr::Server::initIOCP(void){
 
 	//iocp thread pool
 
-	IOCP_WORKTHREAD_PARAM * arg = new IOCP_WORKTHREAD_PARAM;
-	arg->handle = hIOCP;
-	arg->index = 0;
-	arg->pServer = this;
-	IOCPThreadPool.createWorkThread(IOCPWorkThread, arg);
+	IOCPThreadPool.createWorkThread(IOCPWorkThread, this);
 
 	for (int i = 0; i < 4; ++i) {
 		IOCPThreadPool.submitWork();
@@ -105,11 +101,12 @@ bool svr::Server::initIOCP(void){
 	//post accept
 
 	for (int i = 0; i < 32; ++i) {
-		IOCPContext * pContext = new IOCPContext;
+		IOCPContext * pContext = new IOCPContext(this->bufferSize);
 		postAccept(pContext);
 		socketPool.push_back(pContext);
 	}
 
+	Sleep(200);
 	return false;
 }
 
@@ -126,12 +123,14 @@ bool svr::Server::postAccept(IOCPContext * pIC){
 		return false;
 	}
 
-	//if WSAGetLastError == WSA_IO_PENDING
-	//	io is still working normally.
-	// dont return false!!!!
+	// limit 8127 bytes == (pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2) - 1)
 	if (lpfnAcceptEx(svrSocket, pIC->socket, pIC->wsabuf.buf, pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2) - 1, sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &dwBytes, &pIC->overlapped) == FALSE) {
+
+		//if WSAGetLastError == WSA_IO_PENDING
+		//		io is still working .
+		//		dont return false!!!!
 		if (WSA_IO_PENDING != WSAGetLastError()) {
-			Log.write("[server]:in postaccept,acceptex error code=%d.", WSAGetLastError());
+			Log.write("[server]:in postaccept, acceptex error code=%d.", WSAGetLastError());
 			RELEASE_SOCKET(pIC->socket);
 			return false;
 		}
@@ -152,7 +151,7 @@ bool svr::Server::doAccept(IOCPContext * pIC){
 	Log.write("[client]: %s:%d\ncontent:%s.", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), pIC->wsabuf.buf);
 
 	// 2. 
-	IOCPContext * pContext = new IOCPContext;
+	IOCPContext * pContext = new IOCPContext(this->bufferSize);
 	pContext->socket = pIC->socket;
 	pContext->operation = SIG_RECV;
 	memcpy(&(pContext->addr), clientAddr, sizeof(SOCKADDR_IN));
@@ -212,22 +211,24 @@ bool svr::Server::doRecv(IOCPContext * pIC)
 }
 
 void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work){
-	IOCP_WORKTHREAD_PARAM arg = *((IOCP_WORKTHREAD_PARAM*)Parameter);
 	OVERLAPPED * pOverlapped = NULL;
 	DWORD dwBytesTransfered = 0;
 	DWORD threadID = GetCurrentThreadId();
-	Server * pServer = arg.pServer;
+	Server * pServer = (Server*)Parameter;
+	Server * _pServer = NULL;
+	HANDLE handle = pServer->hIOCP;
+
 
 	Log.write("[IOCP]:threadID %d start success", threadID);
 
 	while (true) {
-		BOOL flag = GetQueuedCompletionStatus(arg.handle, &dwBytesTransfered, (PULONG_PTR)&pServer, &pOverlapped, INFINITE);
+		BOOL flag = GetQueuedCompletionStatus(handle, &dwBytesTransfered, (PULONG_PTR)&_pServer, &pOverlapped, INFINITE);
 
 		//error
 		if (!flag || !pOverlapped) {
 			//show error
 			//todo
-			Log.write("[IOCP]:threadID %d flag error", threadID);
+			Log.write("[IOCP]:threadID %d, IOCP queue error, code = %d.", threadID, GetLastError());
 			continue;
 		}
 		
@@ -242,9 +243,13 @@ void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 			pServer->IOCPLock.AcquireExclusive();
 			std::map<SOCKET, IOCPContext*>::iterator it;
 			it = pServer->contextMap.find(pIC->socket);
-			closesocket(it->first);
-			delete it->second;
-			pServer->contextMap.erase(pIC->socket);
+			if (pServer->contextMap.end() != it) {
+				delete it->second;
+				pServer->contextMap.erase(it);
+			}
+			else {
+				Log.write("[IOCP]: in work thread release error");
+			}
 			pServer->IOCPLock.ReleaseExclusive();
 			continue;
 		}

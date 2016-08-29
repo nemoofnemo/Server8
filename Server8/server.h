@@ -92,6 +92,23 @@ namespace svr {
 	enum  NetStatus {};
 };
 
+
+//callback
+class svr::ServerCallback : public Object {
+public:
+	ServerCallback() {
+
+	}
+
+	virtual ~ServerCallback() {
+
+	}
+
+	virtual void run(void *) {
+		Log.write("[ServerCallback]: default callback invoked.");
+	}
+};
+
 //class event . 
 //if length != 0 , destructor will run delete[] data to release memory.
 //sizeof Event is 24 bytes 
@@ -553,6 +570,18 @@ public:
 		return ret;
 	}
 
+	bool remove(const string & key) {
+		bool ret = false;
+		sessionLock.AcquireExclusive();
+		map<string, void *>::iterator it = kv_map.find(key);
+		if (it != kv_map.end()) {
+			kv_map.erase(it);
+			ret = false;
+		}
+		sessionLock.ReleaseExclusive();
+		return ret;
+	}
+
 	void show(bool showEvents = false) {
 		sessionLock.AcquireShared();
 		Log.write("[Session]:\nkey:%s\neventCount=%d, status=%d, level=%d, priority=%d", key.c_str(), eventQueue.size, status, level, priority);
@@ -622,6 +651,18 @@ public:
 		return ret;
 	}
 
+	bool runSessionHandler(const string & key, ServerCallback * pCallback) {
+		bool ret = false;
+		lock.AcquireShared();
+		std::map<string, Session*>::iterator it = sessionMap.find(key);
+		if ((it != sessionMap.end()) && (svr::Status::STATUS_HALT != status)) {
+			pCallback->run(it->second);
+			ret = true;
+		}
+		lock.ReleaseShared();
+		return ret;
+	}
+	
 	bool runSessionHandler(const string & key, void (*fun)(svr::Session *, void *), void * arg) {
 		bool ret = false;
 		lock.AcquireShared();
@@ -727,22 +768,18 @@ public:
 		return ret;
 	}
 
-};
-
-//callback
-class svr::ServerCallback : public Object {
-public:
-	ServerCallback() {
-
+	bool remove(const string & key) {
+		bool ret = false;
+		lock.AcquireExclusive();
+		map<string, void *>::iterator it = kv_map.find(key);
+		if (it != kv_map.end()) {
+			kv_map.erase(it);
+			ret = false;
+		}
+		lock.ReleaseExclusive();
+		return ret;
 	}
 
-	virtual ~ServerCallback() {
-
-	}
-
-	virtual void run(void *) {
-
-	}
 };
 
 //
@@ -785,6 +822,7 @@ private:
 
 	//core
 
+	std::map<string, void*>	kv_map;
 	svr::Session *			pServerSession;
 	svr::SessionManager		sessionManager;
 	svrutil::ThreadPool		workThreadPool;
@@ -803,11 +841,11 @@ private:
 		IOCPOperationSignal	operation;
 		std::list<WSABUF>		dataList;
 
-		IOCPContext() {
+		IOCPContext(int bufSize = svr::ConstVar::DEFAULT_BUF_SIZ) {
 			ZeroMemory(&overlapped, sizeof(OVERLAPPED));
 			socket = INVALID_SOCKET;
-			wsabuf.len = svr::ConstVar::DEFAULT_BUF_SIZ;
-			wsabuf.buf = new char[svr::ConstVar::DEFAULT_BUF_SIZ];
+			wsabuf.len = bufSize;
+			wsabuf.buf = new char[bufSize];
 			operation = SIG_NULL;
 		}
 
@@ -951,4 +989,40 @@ public:
 	int stop(void);
 
 	int status(void);
+
+	//key-value operation
+
+	bool put(const string & key, void * value) {
+		lock.AcquireExclusive();
+		kv_map.insert_or_assign(key, value);
+		lock.ReleaseExclusive();
+		return true;
+	}
+
+	bool get(const string & key, void ** pValue) {
+		bool ret = false;
+		lock.AcquireExclusive();
+		map<string, void *>::iterator it = kv_map.find(key);
+		if (it == kv_map.end()) {
+			*pValue = NULL;
+		}
+		else {
+			*pValue = it->second;
+			ret = true;
+		}
+		lock.ReleaseExclusive();
+		return ret;
+	}
+
+	bool remove(const string & key) {
+		bool ret = false;
+		lock.AcquireExclusive();
+		map<string, void *>::iterator it = kv_map.find(key);
+		if (it != kv_map.end()) {
+			kv_map.erase(it);
+			ret = false;
+		}
+		lock.ReleaseExclusive();
+		return ret;
+	}
 };
