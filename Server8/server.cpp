@@ -149,7 +149,7 @@ bool svr::Server::doAccept(IOCPContext * pIC, int dataLength){
 	lpfnGetAcceptExSockAddrs(pIC->wsabuf.buf, pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2), sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, (LPSOCKADDR*)&localAddr, &localLen, (LPSOCKADDR*)&clientAddr, &remoteLen);
 
 	Log.write(("[client]: %s:%d connect."), inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port));
-	Log.write("[client]: %s:%d\ncontent:%s.", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), pIC->wsabuf.buf);
+	//Log.write("[client]: %s:%d\ncontent:%s", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), pIC->wsabuf.buf);
 
 	protocol::Packet packet;
 	bool flag = false;
@@ -172,7 +172,7 @@ bool svr::Server::doAccept(IOCPContext * pIC, int dataLength){
 			Log.write("[IOCP]:in doaccept wait data");
 		}
 		else {
-			Log.write("[IOCP]:in doaccept unknown error");
+			Log.write("[IOCP]:in doaccept invalid ContentLength");
 		}
 
 	}
@@ -243,7 +243,7 @@ bool svr::Server::doRecv(IOCPContext * pIC, int dataLength)
 {
 	SOCKADDR_IN* ClientAddr = &pIC->addr;
 
-	Log.write("[client]:  %s:%d\ncontent:%s\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), pIC->wsabuf.buf);
+	//Log.write("[client]:  %s:%d\ncontent:%s\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), pIC->wsabuf.buf);
 
 	if (pIC->prevFlag) {
 		if (pIC->bytesToRecv == dataLength) {
@@ -284,7 +284,7 @@ bool svr::Server::doRecv(IOCPContext * pIC, int dataLength)
 				Log.write("[IOCP]:in doRecv wait data");
 			}
 			else {
-				Log.write("[IOCP]:in doRecv unknown error");
+				Log.write("[IOCP]:in doRecv ContentLength");
 			}
 		}
 		else {
