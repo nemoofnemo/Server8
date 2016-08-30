@@ -21,6 +21,7 @@
 #include <array>
 #include <vector>
 #include <map>
+#include <regex>
 
 #pragma comment(lib, "ws2_32.lib") 
 #pragma comment(lib, "mswsock.lib") 

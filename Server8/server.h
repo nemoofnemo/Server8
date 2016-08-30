@@ -10,6 +10,7 @@
 
 #include "svrlib.h"
 #include "svrutil.h"
+#include "protocol.h"
 
 //stl namespace
 using std::pair;

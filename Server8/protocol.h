@@ -14,10 +14,9 @@
 
 /********************************************************************************
 request:
-	head:
+	header:
 		Operation:			String		0-32bytes
-		HeadLength:		int			0-128
-		ContentLength:		int			0-8388608(0-7bytes,8Mb)
+		ContentLength:		int			0-8388608(1-7bytes,8Mb)
 		TimeStamp:		String		23bytes
 		[InstanceName:		String]		0-32bytes
 		[SessionID:			String]		16bytes
@@ -30,10 +29,9 @@ request:
 
 
 response:
-	head:
+	header:
 		Operation:			String
 		OperationStatus:	String		0-32 bytes
-		HeadLength:		int
 		ContentLength:		int
 		TimeStamp:		String
 		InstanceName:		String
@@ -46,7 +44,7 @@ response:
 		[String]
 
 note:
-	1. HeadLength + ContentLength = packet length
+	1. HeaderLength + ContentLength = packet length , and head length < 256 bytes
 	2.time stamp format : YYYY/MM/DD HH:MM:SS:MMM
 	3.JSON data example
 	{
@@ -55,50 +53,57 @@ note:
 		....
 	}
 
-********************************************************************************/
+example:
+	Operation:NULL
+	ContentLength:0
+	TimeStamp:YYYY/MM/DD HH:MM:SS:MMM
+	InstanceName:Server
+	SessionID:AAAABBBBCCCCDDDD
+	'\n'
 
+********************************************************************************/
 
 namespace protocol {
 	class Request;
 	class Response;
+	class Packet;
 }
 
-class protocol::Request : public Object {
-private:
-
-
+class protocol::Packet : public Object {
 public:
-
-	//head
-
 	std::string Operation;
-	int HeadLength;
+	std::string OperationStatus;
 	int ContentLength;
 	std::string TimeStamp;
+	std::string InstanceName;
+	std::string SessionID;
+	char * pData;
 
-	//packet data
-
-	char * packet;
-
+	const static std::regex pattern;
 public:
-
-	Request(const std::string & op, int headLen, int contLen, const std::string stamp) {
-
+	Packet() : Operation(""), ContentLength(0), TimeStamp(""), pData(NULL) {
 
 	}
 
-
-	bool matchRequestHead(char * data, int length) {
-		if (!data) {
-			return false;
-		}
-
-		if (length <= 0 || length > 128) {
-			return false;
-		}
-
-
+	Packet(const std::string & op, const std::string stamp) : Operation(op), TimeStamp(stamp), pData(NULL)
+	{
 
 	}
+
+	Packet(const std::string & op, int contLen, const std::string stamp, void * data) : Operation(op), ContentLength(contLen), TimeStamp(stamp), pData((char*)data)
+	{
+
+	}
+
+	void setContent(void * data, int length) {
+		if (data == NULL || length < 0)
+			return;
+		pData = (char*)data;
+		ContentLength = length;
+	}
+
+	std::string createHeader(void);
+
+	bool matchHeader(const char * data, int length);
 
 };

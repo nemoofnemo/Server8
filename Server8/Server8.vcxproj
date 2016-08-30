@@ -77,6 +77,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="protocol.cpp" />
     <ClCompile Include="server.cpp" />
     <ClCompile Include="svrlib.h" />
   </ItemGroup>
