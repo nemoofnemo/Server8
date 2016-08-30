@@ -321,19 +321,17 @@ void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 		Log.write("[IOCP]:threadID %d io request %d bytes", threadID, dwBytesTransfered);
 
 		if (dwBytesTransfered == 0) {
-			Log.write("[client]: %s:%d disconnect.", inet_ntoa(pIC->addr.sin_addr), ntohs(pIC->addr.sin_port));
-
 			// 释放掉对应的资源
-			//todo
 			pServer->IOCPLock.AcquireExclusive();
 			std::map<SOCKET, IOCPContext*>::iterator it;
 			it = pServer->contextMap.find(pIC->socket);
 			if (pServer->contextMap.end() != it) {
+				Log.write("[client]: %s:%d disconnect.", inet_ntoa(pIC->addr.sin_addr), ntohs(pIC->addr.sin_port));
 				delete it->second;
 				pServer->contextMap.erase(it);
 			}
 			else {
-				Log.write("[IOCP]: in work thread release error");
+				Log.write("[IOCP]: in work thread, Transfered 0 and no IOCPContext");
 			}
 			pServer->IOCPLock.ReleaseExclusive();
 			continue;
@@ -364,6 +362,10 @@ void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 				return;
 			}
 		}
+
+		dwBytesTransfered = 0;
+		_pServer = NULL;
+		pOverlapped = NULL;
 	}
 
 }

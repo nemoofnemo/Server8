@@ -866,6 +866,10 @@ private:
 		}
 
 		~IOCPContext() {
+			if (prevFlag) {
+				delete[] packet.pData;
+			}
+
 			delete[] wsabuf.buf;
 			RELEASE_SOCKET(socket);
 		}
