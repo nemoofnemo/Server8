@@ -70,6 +70,8 @@ namespace protocol {
 }
 
 class protocol::Packet : public Object {
+private:
+	int headLength;
 public:
 	std::string Operation;
 	std::string OperationStatus;
@@ -81,16 +83,16 @@ public:
 
 	const static std::regex pattern;
 public:
-	Packet() : Operation(""), ContentLength(0), TimeStamp(""), pData(NULL) {
+	Packet() : Operation(""), ContentLength(0), TimeStamp(""), pData(NULL), headLength(0) {
 
 	}
 
-	Packet(const std::string & op, const std::string stamp) : Operation(op), TimeStamp(stamp), pData(NULL)
+	Packet(const std::string & op, const std::string stamp) : Operation(op), TimeStamp(stamp), pData(NULL), headLength(0)
 	{
 
 	}
 
-	Packet(const std::string & op, int contLen, const std::string stamp, void * data) : Operation(op), ContentLength(contLen), TimeStamp(stamp), pData((char*)data)
+	Packet(const std::string & op, int contLen, const std::string stamp, void * data) : Operation(op), ContentLength(contLen), TimeStamp(stamp), pData((char*)data), headLength(0)
 	{
 
 	}
@@ -106,4 +108,11 @@ public:
 
 	bool matchHeader(const char * data, int length);
 
+	int getHeaderLength(void) {
+		return headLength;
+	}
+
+	int getPacketLength(void) {
+		return headLength + ContentLength;
+	}
 };

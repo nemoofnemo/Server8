@@ -850,7 +850,11 @@ private:
 		SOCKADDR_IN			addr;
 		WSABUF				wsabuf;
 		IOCPOperationSignal	operation;
-		std::list<WSABUF>		dataList;
+		
+		//warnging
+		bool prevFlag;
+		protocol::Packet		packet;
+		int bytesToRecv;
 
 		IOCPContext(int bufSize = svr::ConstVar::DEFAULT_BUF_SIZ) {
 			ZeroMemory(&overlapped, sizeof(OVERLAPPED));
@@ -858,6 +862,7 @@ private:
 			wsabuf.len = bufSize;
 			wsabuf.buf = new char[bufSize];
 			operation = SIG_NULL;
+			prevFlag = false;
 		}
 
 		~IOCPContext() {
@@ -920,13 +925,13 @@ private:
 
 	bool postAccept(IOCPContext * pIC);
 
-	bool doAccept(IOCPContext * pIC);
+	bool doAccept(IOCPContext * pIC, int dataLength);
 
 	bool postRecv(IOCPContext * pIC);
 
-	bool doRecv(IOCPContext * pIC);
+	bool doRecv(IOCPContext * pIC, int dataLength);
 
-	bool IsValidOperaton(IOCPOperationSignal t) {
+	bool IsValidOperation(IOCPOperationSignal t) {
 		if (t >= 0 && t <= 4) {
 			return true;
 		}

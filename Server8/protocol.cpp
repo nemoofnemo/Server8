@@ -36,6 +36,7 @@ std::string protocol::Packet::createHeader(void)
 	}
 
 	header += '\n';
+	headLength = header.size();
 
 	return header;
 }
@@ -63,9 +64,7 @@ bool protocol::Packet::matchHeader(const char * data, int length) {
 		TimeStamp = result[5].str();
 		InstanceName = result[7].str();
 		SessionID = result[9].str();
-	}
-	else {
-		puts("fuck");
+		headLength = result[0].str().size();
 	}
 
 	return ret;
