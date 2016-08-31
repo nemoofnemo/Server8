@@ -104,7 +104,6 @@ namespace svr {
 	enum  NetStatus {};
 };
 
-
 //callback
 class svr::ServerCallback : public Object {
 public:
@@ -794,10 +793,136 @@ public:
 
 };
 
+//iocp module
 class svr::IOCPModule : public Object {
+private:
+	struct IOCPContext {
+		OVERLAPPED			overlapped;
+		SOCKET				socket;
+		SOCKADDR_IN			addr;
+		WSABUF				wsabuf;
+		IOCPOperationSignal	operation;
 
+		//warnging
+		bool					prevFlag;
+		protocol::Packet		packet;
+		int						bytesToRecv;
 
+		IOCPContext(int bufSize = svr::ConstVar::DEFAULT_BUF_SIZ) {
+			socket = INVALID_SOCKET;
+			wsabuf.len = bufSize;
+			wsabuf.buf = new char[bufSize];
+			ZeroMemory(&overlapped, sizeof(OVERLAPPED));
+			ZeroMemory(&addr, sizeof(SOCKADDR_IN));
+			ZeroMemory(this->wsabuf.buf, bufSize);
+			operation = SIG_NULL;
+			prevFlag = false;
+			bytesToRecv = 0;
+		}
 
+		~IOCPContext() {
+			if (prevFlag) {
+				delete[] packet.pData;
+			}
+
+			delete[] wsabuf.buf;
+			RELEASE_SOCKET(socket);
+		}
+
+		void ResetBuffer(void) {
+			ZeroMemory(this->wsabuf.buf, this->wsabuf.len);
+		}
+	};
+
+	HANDLE					hIOCP;
+	SOCKET					svrSocket;
+	SOCKADDR_IN				svrAddr;
+	std::list<IOCPContext*>	socketPool;
+	std::map<SOCKET, IOCPContext*>	contextMap;
+	int							bufferSize;
+	int							port;
+
+	svrutil::SRWLock			IOCPLock;
+	svrutil::ThreadPool			IOCPThreadPool;
+
+	//AcceptEx 的函数指针
+	LPFN_ACCEPTEX			lpfnAcceptEx;
+	//GetAcceptExSockaddrs 的函数指针
+	LPFN_GETACCEPTEXSOCKADDRS lpfnGetAcceptExSockAddrs;
+
+private:
+
+	bool LoadSocketLib(void) {
+		{
+			WSADATA wsaData;
+			if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+				Log.write("[IOCP]:cannot start wsa .");
+				return false;
+			}
+
+			if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2) {
+				WSACleanup();
+				Log.write("[IOCP]:cannot start wsa .");
+				return false;
+			}
+			return true;
+		}
+	}
+
+	void UnloadSocketLib(void) {
+		WSACleanup();
+	}
+
+	bool GetFunctionAddress(void);
+
+	bool postAccept(IOCPContext * pIC);
+
+	bool doAccept(IOCPContext * pIC, int dataLength);
+
+	bool postRecv(IOCPContext * pIC);
+
+	bool doRecv(IOCPContext * pIC, int dataLength);
+
+	bool isValidOperation(IOCPOperationSignal t) {
+		if (t >= 0 && t <= 4) {
+			return true;
+		}
+		else {
+			return false;
+		}
+	}
+
+	bool isSocketAlive(SOCKET s) {
+		int nByteSent = send(s, "\0", 1, 0);
+		if (nByteSent == SOCKET_ERROR)
+			return false;
+		return true;
+	}
+
+	struct IOCP_WORKTHREAD_PARAM {
+		HANDLE	handle;		//iocp handle
+		Server *	pServer;
+		int			index;
+	};
+
+	static void __stdcall IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
+
+public:
+	IOCPModule() : bufferSize(svr::ConstVar::DEFAULT_BUF_SIZ), port(svr::ConstVar::DEFAULT_LISTEN_PORT){
+
+	}
+
+	IOCPModule(int bufSize, int port) : bufferSize(bufSize), port(port) {
+
+	}
+
+	~IOCPModule() {
+
+	}
+
+	bool initIOCP(void);
+
+	bool stopIOCP(void);
 };
 
 //
@@ -849,114 +974,10 @@ private:
 	int						eventQueueSize;
 	int						bufferSize;
 
-	//io completion port
-
-	struct IOCPContext {
-		OVERLAPPED			overlapped;
-		SOCKET				socket;
-		SOCKADDR_IN			addr;
-		WSABUF				wsabuf;
-		IOCPOperationSignal	operation;
-		
-		//warnging
-		bool prevFlag;
-		protocol::Packet		packet;
-		int bytesToRecv;
-
-		IOCPContext(int bufSize = svr::ConstVar::DEFAULT_BUF_SIZ) {
-			socket = INVALID_SOCKET;
-			wsabuf.len = bufSize;
-			wsabuf.buf = new char[bufSize];
-			operation = SIG_NULL;
-			prevFlag = false;
-			bytesToRecv = 0;
-		}
-
-		~IOCPContext() {
-			if (prevFlag) {
-				delete[] packet.pData;
-			}
-
-			delete[] wsabuf.buf;
-			RELEASE_SOCKET(socket);
-		}
-
-		void ResetBuffer(void) {
-			ZeroMemory(this->wsabuf.buf, svr::ConstVar::DEFAULT_BUF_SIZ);
-		}
-	};
-
-	HANDLE					hIOCP;
-	SOCKET					svrSocket;
-	SOCKADDR_IN				svrAddr;
-	std::list<IOCPContext*>	socketPool;
-	std::map<SOCKET, IOCPContext*>	contextMap;
-
-	svrutil::SRWLock			IOCPLock;
-	svrutil::ThreadPool			IOCPThreadPool;
-
-	//AcceptEx 的函数指针
-	LPFN_ACCEPTEX			lpfnAcceptEx;
-	//GetAcceptExSockaddrs 的函数指针
-	LPFN_GETACCEPTEXSOCKADDRS lpfnGetAcceptExSockAddrs;
 
 private:
 
 	//private functions
-
-	//socket and iocp functions
-
-	bool LoadSocketLib(void) {
-		{
-			WSADATA wsaData;
-			if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-				Log.write("[IOCP]:cannot start wsa .");
-				return false;
-			}
-
-			if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2) {
-				WSACleanup();
-				Log.write("[IOCP]:cannot start wsa .");
-				return false;
-			}
-			return true;
-		}
-	}
-
-	void UnloadSocketLib(void) {
-		WSACleanup();
-	}
-
-	//get address of acceptex and getacceptexsockaddrs
-	bool GetFunctionAddress(void);
-
-	bool initIOCP(void);
-
-	bool stopIOCP(void);
-
-	bool postAccept(IOCPContext * pIC);
-
-	bool doAccept(IOCPContext * pIC, int dataLength);
-
-	bool postRecv(IOCPContext * pIC);
-
-	bool doRecv(IOCPContext * pIC, int dataLength);
-
-	bool isValidOperation(IOCPOperationSignal t) {
-		if (t >= 0 && t <= 4) {
-			return true;
-		}
-		else {
-			return false;
-		}
-	}
-
-	bool isSocketAlive(SOCKET s) {
-		int nByteSent = send(s, "\0", 1, 0);
-		if (nByteSent == SOCKET_ERROR)
-			return false;
-		return true;
-	}
 
 	//deamon functions
 
@@ -969,14 +990,6 @@ private:
 	static void __stdcall ControlerWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 
 	static void __stdcall ProcessorWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
-
-	struct IOCP_WORKTHREAD_PARAM {
-		HANDLE	handle;		//iocp handle
-		Server *	pServer;
-		int			index;
-	};
-
-	static void __stdcall IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 
 	//not available
 

@@ -6,7 +6,7 @@ LogModule Log("console");
 LogModule Log("./server.log");
 #endif
 
-bool svr::Server::GetFunctionAddress(void){
+bool svr::IOCPModule::GetFunctionAddress(void){
 	GUID guid = WSAID_ACCEPTEX;        // GUID，这个是识别AcceptEx函数必须的
 	DWORD dwBytes = 0;
 
@@ -39,13 +39,13 @@ bool svr::Server::GetFunctionAddress(void){
 
 	return true;
 }
-//accept 2
-bool svr::Server::initIOCP(void){
-	this->LoadSocketLib();
+
+bool svr::IOCPModule::initIOCP(void){
+	LoadSocketLib();
 	svrSocket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 	svrAddr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
 	svrAddr.sin_family = AF_INET;
-	svrAddr.sin_port = htons(instanceInfo.port);
+	svrAddr.sin_port = htons(port);
 	
 	//create iocp
 	hIOCP = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
@@ -100,7 +100,7 @@ bool svr::Server::initIOCP(void){
 
 	//post accept
 
-	for (int i = 0; i < 2; ++i) {
+	for (int i = 0; i < 1; ++i) {
 		IOCPContext * pContext = new IOCPContext(this->bufferSize);
 		postAccept(pContext);
 		socketPool.push_back(pContext);
@@ -110,7 +110,7 @@ bool svr::Server::initIOCP(void){
 	return false;
 }
 
-bool svr::Server::postAccept(IOCPContext * pIC){
+bool svr::IOCPModule::postAccept(IOCPContext * pIC){
 	if (NULL == pIC || INVALID_SOCKET == svrSocket)
 		return false;
 	
@@ -124,7 +124,7 @@ bool svr::Server::postAccept(IOCPContext * pIC){
 	}
 
 	// limit 8128 bytes == (pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2) )
-	if (lpfnAcceptEx(svrSocket, pIC->socket, pIC->wsabuf.buf, pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2) - 1, sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &dwBytes, &pIC->overlapped) == FALSE) {
+	if (lpfnAcceptEx(svrSocket, pIC->socket, pIC->wsabuf.buf, pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2), sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &dwBytes, &pIC->overlapped) == FALSE) {
 
 		//if WSAGetLastError == WSA_IO_PENDING
 		//		io is still working .
@@ -139,7 +139,7 @@ bool svr::Server::postAccept(IOCPContext * pIC){
 	return true;
 }
 
-bool svr::Server::doAccept(IOCPContext * pIC, int dataLength){
+bool svr::IOCPModule::doAccept(IOCPContext * pIC, int dataLength){
 	SOCKADDR_IN* clientAddr = NULL;
 	SOCKADDR_IN* localAddr = NULL;
 	int remoteLen = sizeof(SOCKADDR_IN), localLen = sizeof(SOCKADDR_IN);
@@ -166,7 +166,6 @@ bool svr::Server::doAccept(IOCPContext * pIC, int dataLength){
 		else if(packetLength > dataLength){
 			flag = true;
 			packet.pData = new char[packetLength];
-			packet.ContentLength = packetLength;
 			memcpy(packet.pData, pIC->wsabuf.buf, dataLength);
 			bytesToRecv = packetLength - dataLength;
 			Log.write("[IOCP]:in doaccept wait data");
@@ -220,7 +219,7 @@ bool svr::Server::doAccept(IOCPContext * pIC, int dataLength){
 	return postAccept(pIC);
 }
 
-bool svr::Server::postRecv(IOCPContext * pIC){
+bool svr::IOCPModule::postRecv(IOCPContext * pIC){
 	DWORD dwFlags = 0;
 	DWORD dwBytes = 0;
 	WSABUF *pWSAbuf = &pIC->wsabuf;
@@ -242,7 +241,7 @@ bool svr::Server::postRecv(IOCPContext * pIC){
 	return true;
 }
 
-bool svr::Server::doRecv(IOCPContext * pIC, int dataLength)
+bool svr::IOCPModule::doRecv(IOCPContext * pIC, int dataLength)
 {
 	SOCKADDR_IN* ClientAddr = &pIC->addr;
 
@@ -257,6 +256,9 @@ bool svr::Server::doRecv(IOCPContext * pIC, int dataLength)
 			memcpy(pIC->packet.pData + pIC->packet.getPacketLength() - dataLength, pIC->wsabuf.buf, dataLength);
 			//process data
 			Log.write("[IOCP]:in doRecv process data");
+		}
+		else {
+			Log.write("[IOCP]:in doRecv invalid data length.");
 		}
 
 		delete[] pIC->wsabuf.buf;
@@ -303,18 +305,18 @@ bool svr::Server::doRecv(IOCPContext * pIC, int dataLength)
 	return postRecv(pIC);
 }
 
-void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work){
+void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work){
 	OVERLAPPED * pOverlapped = NULL;
 	DWORD dwBytesTransfered = 0;
 	DWORD threadID = GetCurrentThreadId();
-	Server * pServer = (Server*)Parameter;
-	Server * _pServer = NULL;
-	HANDLE handle = pServer->hIOCP;
+	IOCPModule * pIOCPModule = (IOCPModule*)Parameter;
+	IOCPModule * _pIOCPModule = NULL;
+	HANDLE handle = pIOCPModule->hIOCP;
 
 	Log.write("[IOCP]:threadID %d start success", threadID);
 
 	while (true) {
-		BOOL flag = GetQueuedCompletionStatus(handle, &dwBytesTransfered, (PULONG_PTR)&_pServer, &pOverlapped, INFINITE);
+		BOOL flag = GetQueuedCompletionStatus(handle, &dwBytesTransfered, (PULONG_PTR)&_pIOCPModule, &pOverlapped, INFINITE);
 
 		//error
 		if (!flag || !pOverlapped) {
@@ -329,27 +331,27 @@ void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 		if (dwBytesTransfered == 0) {
 			std::map<SOCKET, IOCPContext*>::iterator it;
 			// 释放掉对应的资源
-			pServer->IOCPLock.AcquireExclusive();
-			it = pServer->contextMap.find(pIC->socket);
-			if (pServer->contextMap.end()!=it) {
+			pIOCPModule->IOCPLock.AcquireExclusive();
+			it = pIOCPModule->contextMap.find(pIC->socket);
+			if (pIOCPModule->contextMap.end()!=it) {
 				Log.write("[client]: %s:%d disconnect.", inet_ntoa(pIC->addr.sin_addr), ntohs(pIC->addr.sin_port));
 				delete it->second;
-				pServer->contextMap.erase(it);
+				pIOCPModule->contextMap.erase(it);
 			}
 			else {
 				RELEASE_SOCKET(pIC->socket);
-				pServer->postAccept(pIC);
+				pIOCPModule->postAccept(pIC);
 				Log.write("[IOCP]: in work thread, Transfered 0 and no IOCPContext");
 			}
-			pServer->IOCPLock.ReleaseExclusive();
+			pIOCPModule->IOCPLock.ReleaseExclusive();
 		}
 		else {
 			switch (pIC->operation) {
 			case SIG_ACCEPT:
-				pServer->doAccept(pIC, dwBytesTransfered);
+				pIOCPModule->doAccept(pIC, dwBytesTransfered);
 				break;
 			case SIG_RECV:
-				pServer->doRecv(pIC, dwBytesTransfered);
+				pIOCPModule->doRecv(pIC, dwBytesTransfered);
 				break;
 			case SIG_SEND:
 
@@ -368,18 +370,9 @@ void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 		}
 
 		dwBytesTransfered = 0;
-		_pServer = NULL;
+		_pIOCPModule = NULL;
 		pOverlapped = NULL;
 	}
 	Log.write("[IOCP]: in work thread return success");
 }
 
-int svr::Server::run(void){
-	initIOCP();
-
-	while (true) {
-		Sleep(500);
-	}
-
-	return 0;
-}

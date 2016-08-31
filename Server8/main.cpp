@@ -4,11 +4,13 @@ using namespace svr;
 using namespace svrutil;
 
 int main(void){
-	Server::ServerInfo info;
-	info.instanceName = "test";
-	info.port = 6001;
-	info.status = svr::Status::STATUS_READY;
-	Server server(info);
-	server.run();
+	IOCPModule m;
+	m.initIOCP();
+
+	while (true)
+	{
+		Sleep(500);
+	}
+
 	return 0;
 }
