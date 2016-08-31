@@ -94,7 +94,7 @@ bool svr::Server::initIOCP(void){
 
 	IOCPThreadPool.createWorkThread(IOCPWorkThread, this);
 
-	for (int i = 0; i < 4; ++i) {
+	for (int i = 0; i < 1; ++i) {
 		IOCPThreadPool.submitWork();
 	}
 
@@ -124,7 +124,7 @@ bool svr::Server::postAccept(IOCPContext * pIC){
 	}
 
 	// limit 8128 bytes == (pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2) )
-	if (lpfnAcceptEx(svrSocket, pIC->socket, pIC->wsabuf.buf, pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2), sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &dwBytes, &pIC->overlapped) == FALSE) {
+	if (lpfnAcceptEx(svrSocket, pIC->socket, pIC->wsabuf.buf, pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2) - 1, sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &dwBytes, &pIC->overlapped) == FALSE) {
 
 		//if WSAGetLastError == WSA_IO_PENDING
 		//		io is still working .
@@ -191,15 +191,15 @@ bool svr::Server::doAccept(IOCPContext * pIC, int dataLength){
 	memcpy(&(pContext->addr), clientAddr, sizeof(SOCKADDR_IN));
 	if (CreateIoCompletionPort((HANDLE)pContext->socket, hIOCP, (ULONG_PTR)this, 0) == NULL) {
 		delete pContext;
+		RELEASE_SOCKET(pIC->socket);
 		Log.write("[IOCP]:in doaccept,iocp failed");
-		return false;
 	}
 
 	//3.
 	if (postRecv(pContext) == false) {
 		delete pContext;
+		RELEASE_SOCKET(pIC->socket);
 		Log.write("[IOCP]:in doaccept,post failed");
-		return false;
 	}
 	else {
 		// 4. 如果投递成功，那么就把这个有效的客户端信息，加入到ContextMap

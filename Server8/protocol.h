@@ -87,7 +87,7 @@ public:
 
 	}
 
-	Packet(const std::string & op, const std::string stamp) : Operation(op), TimeStamp(stamp), pData(NULL), headLength(0)
+	Packet(const std::string & op, const std::string stamp) : Operation(op), TimeStamp(stamp), pData(NULL), headLength(0), ContentLength(0)
 	{
 
 	}

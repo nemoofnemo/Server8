@@ -31,6 +31,7 @@ namespace svr {
 	class Session;
 	class ServerConfig;
 	class SessionManager;
+	class IOCPModule;
 	class Server;
 	class ServerCallback;
 
@@ -793,6 +794,12 @@ public:
 
 };
 
+class svr::IOCPModule : public Object {
+
+
+
+};
+
 //
 class svr::Server : public Object {
 public:
@@ -857,12 +864,12 @@ private:
 		int bytesToRecv;
 
 		IOCPContext(int bufSize = svr::ConstVar::DEFAULT_BUF_SIZ) {
-			ZeroMemory(&overlapped, sizeof(OVERLAPPED));
 			socket = INVALID_SOCKET;
 			wsabuf.len = bufSize;
 			wsabuf.buf = new char[bufSize];
 			operation = SIG_NULL;
 			prevFlag = false;
+			bytesToRecv = 0;
 		}
 
 		~IOCPContext() {

@@ -20,7 +20,7 @@ std::string protocol::Packet::createHeader(void)
 		header += '\n';
 	}
 
-	header += std::string("ContentLength::") + ContLen;
+	header += std::string("ContentLength:") + ContLen;
 	header += '\n';
 	header += std::string("TimeStamp:") + TimeStamp;
 	header += '\n';

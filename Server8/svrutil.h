@@ -283,6 +283,9 @@ public:
 	//向缓冲区写入数据.如果缓冲区已满,则写入指定文件中.
 	//当路径为"console"时,不缓冲,直接输出到控制台.
 	int write(const char * str, ...) {
+		va_list vl;
+		va_start(vl, str);
+
 		int num = 0;
 		char timeStamp[32] = "";//char timeStamp[] = "[YYYY/MM/DD-HH:MM:SS:mmm]: ";
 
@@ -292,10 +295,7 @@ public:
 
 		string format(timeStamp);
 		format += str;
-		format += '\n';
-
-		va_list vl;
-		va_start(vl, str);
+		format += "\n";
 
 		if (filePath == "console") {
 			num = ::vfprintf_s(stdout, format.c_str(), vl);
