@@ -39,7 +39,7 @@ bool svr::Server::GetFunctionAddress(void){
 
 	return true;
 }
-
+//accept 2
 bool svr::Server::initIOCP(void){
 	this->LoadSocketLib();
 	svrSocket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
@@ -100,7 +100,7 @@ bool svr::Server::initIOCP(void){
 
 	//post accept
 
-	for (int i = 0; i < 32; ++i) {
+	for (int i = 0; i < 2; ++i) {
 		IOCPContext * pContext = new IOCPContext(this->bufferSize);
 		postAccept(pContext);
 		socketPool.push_back(pContext);
@@ -176,6 +176,9 @@ bool svr::Server::doAccept(IOCPContext * pIC, int dataLength){
 		}
 
 	}
+	else if (dataLength == 0) {
+		Log.write("[IOCP]:in doAccept empty packet , client: %s:%d", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port));
+	}
 	else {
 		Log.write("[IOCP]:in doaccept matchHeader failed");
 	}
@@ -245,7 +248,11 @@ bool svr::Server::doRecv(IOCPContext * pIC, int dataLength)
 
 	//Log.write("[client]:  %s:%d\ncontent:%s\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), pIC->wsabuf.buf);
 
-	if (pIC->prevFlag) {
+	if (dataLength == 0) {
+		//do nothing
+		Log.write("[IOCP]:in doRecv empty packet , client: %s:%d", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port));
+	}
+	else if (pIC->prevFlag) {
 		if (pIC->bytesToRecv == dataLength) {
 			memcpy(pIC->packet.pData + pIC->packet.getPacketLength() - dataLength, pIC->wsabuf.buf, dataLength);
 			//process data
@@ -312,7 +319,6 @@ void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 		//error
 		if (!flag || !pOverlapped) {
 			//show error
-			//todo
 			Log.write("[IOCP]:threadID %d, IOCP queue error, code = %d.", threadID, GetLastError());
 			continue;
 		}
@@ -321,25 +327,23 @@ void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 		Log.write("[IOCP]:threadID %d io request %d bytes", threadID, dwBytesTransfered);
 
 		if (dwBytesTransfered == 0) {
+			std::map<SOCKET, IOCPContext*>::iterator it;
 			// 释放掉对应的资源
 			pServer->IOCPLock.AcquireExclusive();
-			std::map<SOCKET, IOCPContext*>::iterator it;
 			it = pServer->contextMap.find(pIC->socket);
-			if (pServer->contextMap.end() != it) {
+			if (pServer->contextMap.end()!=it) {
 				Log.write("[client]: %s:%d disconnect.", inet_ntoa(pIC->addr.sin_addr), ntohs(pIC->addr.sin_port));
 				delete it->second;
 				pServer->contextMap.erase(it);
 			}
 			else {
+				RELEASE_SOCKET(pIC->socket);
+				pServer->postAccept(pIC);
 				Log.write("[IOCP]: in work thread, Transfered 0 and no IOCPContext");
 			}
 			pServer->IOCPLock.ReleaseExclusive();
-			continue;
 		}
 		else {
-			//warning
-			//pIC->wsabuf.buf[dwBytesTransfered] = '\0';
-
 			switch (pIC->operation) {
 			case SIG_ACCEPT:
 				pServer->doAccept(pIC, dwBytesTransfered);
@@ -367,7 +371,7 @@ void svr::Server::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 		_pServer = NULL;
 		pOverlapped = NULL;
 	}
-
+	Log.write("[IOCP]: in work thread return success");
 }
 
 int svr::Server::run(void){

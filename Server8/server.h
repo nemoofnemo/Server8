@@ -935,13 +935,20 @@ private:
 
 	bool doRecv(IOCPContext * pIC, int dataLength);
 
-	bool IsValidOperation(IOCPOperationSignal t) {
+	bool isValidOperation(IOCPOperationSignal t) {
 		if (t >= 0 && t <= 4) {
 			return true;
 		}
 		else {
 			return false;
 		}
+	}
+
+	bool isSocketAlive(SOCKET s) {
+		int nByteSent = send(s, "\0", 1, 0);
+		if (nByteSent == SOCKET_ERROR)
+			return false;
+		return true;
 	}
 
 	//deamon functions

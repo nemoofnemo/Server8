@@ -2,8 +2,8 @@
 #include <cstdio>
 
 //Operation:NULL\nContentLength:0\nTimeStamp:YYYY/MM/DD HH:MM:SS:MMM\nInstanceName:Server\nSessionID:AAAABBBBCCCCDDDD\n\n
-//Operation:(\w{1,32})\s(OperationStatus:(\w{1,32})\s)?ContentLength:(\d{1,7})\sTimeStamp:(.{23})\s(InstanceName:(\w{1,32})\s)?(SessionID:(\w{16})\s)?\s.*
-const std::regex protocol::Packet::pattern(R"(Operation:(\w{1,32})\s(OperationStatus:(\w{1,32})\s)?ContentLength:(\d{1,7})\sTimeStamp:(.{23})\s(InstanceName:(\w{1,32})\s)?(SessionID:(\w{16})\s)?\s.*)" );
+//(Operation:(\w{1,32})\s(OperationStatus:(\w{1,32})\s)?ContentLength:(\d{1,7})\sTimeStamp:(.{23})\s(InstanceName:(\w{1,32})\s)?(SessionID:(\w{16})\s)?\s).*
+const std::regex protocol::Packet::pattern(R"((Operation:(\w{1,32})\s(OperationStatus:(\w{1,32})\s)?ContentLength:(\d{1,7})\sTimeStamp:(.{23})\s(InstanceName:(\w{1,32})\s)?(SessionID:(\w{16})\s)?\s).*)" );
 
 std::string protocol::Packet::createHeader(void)
 {
@@ -42,7 +42,7 @@ std::string protocol::Packet::createHeader(void)
 }
 
 bool protocol::Packet::matchHeader(const char * data, int length) {
-	if (data == NULL || length < 0) {
+	if (data == NULL || length <= 0) {
 		return false;
 	}
 	length = length > 256 ? 256 : length;
@@ -55,17 +55,17 @@ bool protocol::Packet::matchHeader(const char * data, int length) {
 
 	if (flag) {
 		ret = true;
-		Operation = result[1].str();
-		OperationStatus = result[3].str();
+		Operation = result[2].str();
+		OperationStatus = result[4].str();
 
-		if (sscanf_s(result[4].str().c_str(), "%d", &ContentLength) != 1) {
+		if (sscanf_s(result[5].str().c_str(), "%d", &ContentLength) != 1) {
 			ret = false;
 		}
 
-		TimeStamp = result[5].str();
-		InstanceName = result[7].str();
-		SessionID = result[9].str();
-		headLength = result[0].str().size();
+		TimeStamp = result[6].str();
+		InstanceName = result[8].str();
+		SessionID = result[10].str();
+		headLength = result[1].str().size();
 	}
 
 	return ret;
