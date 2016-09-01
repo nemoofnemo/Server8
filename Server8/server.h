@@ -850,6 +850,18 @@ private:
 	//GetAcceptExSockaddrs µÄº¯ÊýÖ¸Õë
 	LPFN_GETACCEPTEXSOCKADDRS lpfnGetAcceptExSockAddrs;
 
+public:
+	class IOCPCallback {
+	public:
+		virtual int run(SOCKET s,const SOCKADDR_IN * addr, const char * data, int length) {
+
+		}
+	};
+
+private:
+	IOCPCallback * pRecvCallback;
+	IOCPCallback * pSendCallback;
+
 private:
 
 	bool LoadSocketLib(void) {
@@ -908,11 +920,21 @@ private:
 	static void __stdcall IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 
 public:
-	IOCPModule() : bufferSize(svr::ConstVar::DEFAULT_BUF_SIZ), port(svr::ConstVar::DEFAULT_LISTEN_PORT){
+	IOCPModule() : 
+		bufferSize(svr::ConstVar::DEFAULT_BUF_SIZ), 
+		port(svr::ConstVar::DEFAULT_LISTEN_PORT),
+		pRecvCallback(NULL),
+		pSendCallback(NULL)
+	{
 
 	}
 
-	IOCPModule(int bufSize, int port) : bufferSize(bufSize), port(port) {
+	IOCPModule(int bufSize, int port) : 
+		bufferSize(bufSize), 
+		port(port),
+		pRecvCallback(NULL),
+		pSendCallback(NULL)
+	{
 
 	}
 
@@ -923,6 +945,18 @@ public:
 	bool initIOCP(void);
 
 	bool stopIOCP(void);
+
+	bool setRecvCallback(IOCPCallback * pIOCPCallback) {
+		if (pIOCPCallback) {
+			this->pRecvCallback = pIOCPCallback;
+		}
+	}
+
+	bool setSendCallback(IOCPCallback * pIOCPCalback) {
+		if (pIOCPCalback) {
+			this->pSendCallback = pIOCPCalback;
+		}
+	}
 };
 
 //

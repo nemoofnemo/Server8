@@ -153,11 +153,13 @@ bool svr::IOCPModule::doAccept(IOCPContext * pIC, int dataLength){
 
 	protocol::Packet packet;
 	bool flag = false;
+	bool processFlag = false;
 	if (packet.matchHeader(pIC->wsabuf.buf, dataLength)) {
 		Log.write("[IOCP]:in doaccept matchHeader success");
 		int packetLength = packet.getPacketLength();
 		if (packetLength == dataLength) {
 			//process data
+			processFlag = true;
 			Log.write("[IOCP]:in doaccept process data");
 		}
 		else if (packetLength > 8388608) {
@@ -186,8 +188,8 @@ bool svr::IOCPModule::doAccept(IOCPContext * pIC, int dataLength){
 	IOCPContext * pContext = new IOCPContext(bytesToRecv);
 	pContext->socket = pIC->socket;
 	pContext->operation = SIG_RECV;
-	
 	memcpy(&(pContext->addr), clientAddr, sizeof(SOCKADDR_IN));
+
 	if (CreateIoCompletionPort((HANDLE)pContext->socket, hIOCP, (ULONG_PTR)this, 0) == NULL) {
 		delete pContext;
 		RELEASE_SOCKET(pIC->socket);
@@ -212,6 +214,16 @@ bool svr::IOCPModule::doAccept(IOCPContext * pIC, int dataLength){
 		IOCPLock.AcquireExclusive();
 		contextMap.insert(std::pair<SOCKET, IOCPContext*>(pContext->socket, pContext));
 		IOCPLock.ReleaseExclusive();
+	}
+
+	//process data
+	if (processFlag == true) {
+		if (pRecvCallback) {
+			pRecvCallback->run(pContext->socket, &pContext->addr, pIC->wsabuf.buf, dataLength);
+		}
+		else {
+			Log.write("[IOCP]:in doaccept process data : no callback");
+		}
 	}
 
 	// 5. 使用完毕之后，把Listen Socket的那个IoContext重置，然后准备投递新的AcceptEx
@@ -254,8 +266,15 @@ bool svr::IOCPModule::doRecv(IOCPContext * pIC, int dataLength)
 	else if (pIC->prevFlag) {
 		if (pIC->bytesToRecv == dataLength) {
 			memcpy(pIC->packet.pData + pIC->packet.getPacketLength() - dataLength, pIC->wsabuf.buf, dataLength);
+			
 			//process data
-			Log.write("[IOCP]:in doRecv process data");
+			if (pRecvCallback) {
+				Log.write("[IOCP]:in doRecv process data");
+				pRecvCallback->run(pIC->socket, &pIC->addr, pIC->packet.pData, pIC->packet.getPacketLength());
+			}
+			else {
+				Log.write("[IOCP]:in doRecv process data : no callback");
+			}
 		}
 		else {
 			Log.write("[IOCP]:in doRecv invalid data length.");
@@ -275,7 +294,14 @@ bool svr::IOCPModule::doRecv(IOCPContext * pIC, int dataLength)
 			int packetLength = pIC->packet.getPacketLength();
 			if (packetLength == dataLength) {
 				//process data
-				Log.write("[IOCP]:in doRecv process data");
+				//process data
+				if (pRecvCallback) {
+					Log.write("[IOCP]:in doRecv process data");
+					pRecvCallback->run(pIC->socket, &pIC->addr, pIC->wsabuf.buf, pIC->wsabuf.len);
+				}
+				else {
+					Log.write("[IOCP]:in doRecv process data : no callback");
+				}
 			}
 			else if (packetLength > 8388608) {
 				Log.write("[IOCP]:in doRecv data large than 8Mb");
@@ -286,6 +312,7 @@ bool svr::IOCPModule::doRecv(IOCPContext * pIC, int dataLength)
 				pIC->packet.ContentLength = packetLength;
 				memcpy(pIC->packet.pData, pIC->wsabuf.buf, dataLength);
 				pIC->bytesToRecv = packetLength - dataLength;
+
 				delete pIC->wsabuf.buf;
 				pIC->wsabuf.buf = new char[pIC->bytesToRecv];
 				pIC->wsabuf.len = pIC->bytesToRecv;
