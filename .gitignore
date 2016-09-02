@@ -61,3 +61,4 @@ Temporary Items
 *.idb
 *.vcxproj
 *.vcxproj.filters
+/.vs/config/applicationhost.config

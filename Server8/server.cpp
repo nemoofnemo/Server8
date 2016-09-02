@@ -232,6 +232,20 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 	return postRecv(pIC);
 }
 
+bool svr::IOCPModule::postSend(IOCPContext * pIC){
+	DWORD dwFlags = 0;
+	DWORD dwBytes = 0;
+	//WSABUF *pWSAbuf = &pIC->wsabuf;
+	OVERLAPPED *pOl = &pIC->overlapped;
+	int temp = WSASend(pIC->socket, &pIC->wsabuf, 1, &dwBytes, dwFlags, pOl, NULL);
+	return false;
+}
+
+bool svr::IOCPModule::doSend(IOCPContext * pIC, int dataLength){
+
+	return false;
+}
+
 void svr::IOCPModule::doCloseConnection(IOCPModule * pIOCPModule, SocketContext * pSC){
 	pIOCPModule->lock.AcquireExclusive();
 	Log.write("[client]:  %s:%d disconnect\n", inet_ntoa(pSC->addr.sin_addr), ntohs(pSC->addr.sin_port));
