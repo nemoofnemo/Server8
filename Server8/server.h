@@ -963,7 +963,7 @@ private:
 
 	bool postSend(IOCPContext * pIC);
 
-	bool doSend(IOCPContext * pIC, int dataLength);
+	bool doSend(SocketContext * pSC, IOCPContext * pIC, int dataLength);
 
 	void doCloseConnection(IOCPModule * pIOCPModule, SocketContext * pSC);
 

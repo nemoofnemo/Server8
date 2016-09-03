@@ -143,7 +143,6 @@ bool svr::IOCPModule::postAccept(IOCPContext * pIC){
 		//		dont return false!!!!
 		if (WSA_IO_PENDING != WSAGetLastError()) {
 			Log.write("[server]:in postaccept, acceptex error code=%d.", WSAGetLastError());
-			RELEASE_SOCKET(pIC->socket);
 			return false;
 		}
 	}
@@ -158,10 +157,6 @@ bool svr::IOCPModule::doAccept(SocketContext * pSC, IOCPContext * pIC, int dataL
 
 	//1.get client info
 	lpfnGetAcceptExSockAddrs(pIC->wsabuf.buf, pIC->wsabuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2), sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, (LPSOCKADDR*)&localAddr, &localLen, (LPSOCKADDR*)&clientAddr, &remoteLen);
-
-	Log.write(("[client]: %s:%d connect."), inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port));
-	Log.write("[client]: %s:%d\ncontent:%s", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), pIC->wsabuf.buf);
-
 
 	// 2. 
 	SocketContext * pSocketContext = new SocketContext;
@@ -179,6 +174,29 @@ bool svr::IOCPModule::doAccept(SocketContext * pSC, IOCPContext * pIC, int dataL
 		delete pSocketContext;
 		Log.write("[IOCP]:in doaccept,iocp failed");
 		return postAccept(pIC);
+	}
+
+	Log.write(("[client]: %s:%d connect."), inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port));
+	Log.write("[client]: %s:%d\ncontent:%s", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), pIC->wsabuf.buf);
+
+	protocol::Packet packet;
+	if (packet.matchHeader(pIC->wsabuf.buf, dataLength) == true) {
+		if (packet.getPacketLength() == dataLength) {
+			//process data
+			Log.write("[IOCP]:in doaccept,process data");
+		}
+		else {
+			pContext->prevFlag = true;
+			pContext->prevData = new char[packet.getPacketLength()];
+			ZeroMemory(pContext->prevData, packet.getPacketLength());
+			memcpy(pContext->prevData, pIC->wsabuf.buf, dataLength);
+			pContext->bytesToRecv = packet.getPacketLength() - dataLength;
+			pContext->packet = packet;
+			Log.write("[IOCP]:in doaccept,wait data");
+		}
+	}
+	else {
+		Log.write("[IOCP]:in doaccept,invalid data");
 	}
 
 	//3.
@@ -226,7 +244,44 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 {
 	SOCKADDR_IN* ClientAddr = &pIC->addr;
 
-	Log.write("[client]:  %s:%d\ncontent:%s\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), pIC->wsabuf.buf);
+	Log.write("[client]:in dorecv %s:%d\ncontent:%s\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), pIC->wsabuf.buf);
+
+	protocol::Packet packet;
+	if (pIC->prevFlag) {
+		if (packet.matchHeader(pIC->wsabuf.buf, dataLength) == true) {
+			//prevdata is invalid
+
+
+		}
+		else {
+			if (pIC->bytesToRecv == dataLength) {
+				//process data
+
+			}
+			else if(dataLength < pIC->bytesToRecv){
+				//wait for data
+				memcpy(pIC->prevData + pIC->packet.getPacketLength() - pIC->bytesToRecv, pIC->wsabuf.buf, dataLength);
+				pIC->bytesToRecv -= dataLength;
+			}
+			else {
+				//prevdata is invalid
+
+			}
+		}
+	}
+	else {
+		if (packet.matchHeader(pIC->wsabuf.buf, dataLength) == true) {
+			if (packet.getPacketLength() == dataLength) {
+				//process data
+			}
+			else {
+
+			}
+		}
+		else {
+
+		}
+	}
 
 	// 然后开始投递下一个WSARecv请求
 	return postRecv(pIC);
@@ -238,10 +293,17 @@ bool svr::IOCPModule::postSend(IOCPContext * pIC){
 	//WSABUF *pWSAbuf = &pIC->wsabuf;
 	OVERLAPPED *pOl = &pIC->overlapped;
 	int temp = WSASend(pIC->socket, &pIC->wsabuf, 1, &dwBytes, dwFlags, pOl, NULL);
-	return false;
+
+	if ((SOCKET_ERROR == temp) && (WSA_IO_PENDING != WSAGetLastError()))
+	{
+		Log.write("[IOCP]:in postsend , post failed");
+		return false;
+	}
+
+	return true;;
 }
 
-bool svr::IOCPModule::doSend(IOCPContext * pIC, int dataLength){
+bool svr::IOCPModule::doSend(SocketContext * pSC, IOCPContext * pIC, int dataLength){
 
 	return false;
 }
@@ -290,17 +352,6 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 				pIOCPModule->doAccept(pSC, pIC, dwBytesTransfered);
 				break;
 			case SIG_RECV:
-				pIOCPModule->lock.AcquireShared();
-				it = pIOCPModule->socketContextMap.find(pSC);
-				if (it == pIOCPModule->socketContextMap.end()) {
-					pIOCPModule->lock.ReleaseShared();
-					dwBytesTransfered = 0;
-					pOverlapped = NULL;
-					pSC = NULL;
-					pIC = NULL;
-					continue;
-				}
-				pIOCPModule->lock.ReleaseShared();
 				pIOCPModule->doRecv(pSC, pIC, dwBytesTransfered);
 				break;
 			case SIG_SEND:
