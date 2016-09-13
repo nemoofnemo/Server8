@@ -247,7 +247,8 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 
 	Log.write("[client]:in dorecv %s:%d\ncontent:%s\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), pIC->wsabuf.buf);
 
-	protocol::Packet packet;
+	protocol::Packet pack;
+	int count = 0;
 	if (pIC->prevFlag) {
 		if (pIC->bytesToRecv == dataLength) {
 			//process data
@@ -262,10 +263,31 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 			memcpy(pIC->prevData + pIC->packet.getPacketLength() - pIC->bytesToRecv, pIC->wsabuf.buf, dataLength);
 			pIC->bytesToRecv -= dataLength;
 		}
-		else if (dataLength > pIC->bytesToRecv && dataLength <= bufferSize) {
-			//todo
+		else if (dataLength > pIC->bytesToRecv && dataLength <= bufferSize) {//todo
+			//processdata
+			memcpy(pIC->prevData + pIC->packet.getPacketLength() - pIC->bytesToRecv, pIC->wsabuf.buf, pIC->bytesToRecv);
+			Log.write("[IOCP]:in dorecv, process data.");
+			pIC->prevFlag = false;
+			count += pIC->bytesToRecv;
+			pIC->bytesToRecv = 0;
+			delete[] pIC->prevData;
+
 			//packet splicing
-			protocol::Packet pac;
+			while (count < dataLength && pack.matchHeader(pIC->wsabuf.buf + count, dataLength - count)) 
+			{
+				if (dataLength - count > pack.getPacketLength()) {
+					Log.write("[IOCP]:in dorecv, process data.");
+				}
+				count += pack.getPacketLength();
+			}
+
+			if (count > dataLength) {
+				pIC->prevFlag = true;
+				pIC->bytesToRecv = count - dataLength;
+				pIC->prevData = new char[pIC->bytesToRecv];
+				ZeroMemory(pIC->prevData, pIC->bytesToRecv);
+				memcpy(pIC->prevData, pIC->wsabuf.buf + (count - pack.getPacketLength()), pIC->bytesToRecv);
+			}
 		}
 		else {
 			//prevdata is invalid
@@ -276,25 +298,28 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 		}
 	}
 	else {
-		if (packet.matchHeader(pIC->wsabuf.buf, dataLength) == true) {
-			if (packet.getPacketLength() == dataLength) {
-				//process data
+		while (count < dataLength && pack.matchHeader(pIC->wsabuf.buf + count, dataLength - count))
+		{
+			if (dataLength - count > pack.getPacketLength()) {
 				Log.write("[IOCP]:in dorecv, process data.");
 			}
-			else {
-				//wait data
-				Log.write("[IOCP]:in dorecv, wait data 2.");
-				pIC->packet = packet;
-				pIC->prevFlag = true;
-				pIC->prevData = new char[packet.getPacketLength()];
-				ZeroMemory(pIC->prevData, packet.getPacketLength());
-				pIC->bytesToRecv = packet.getPacketLength() - dataLength;
-				memcpy(pIC->prevData, pIC->wsabuf.buf, dataLength);
-			}
+			count += pack.getPacketLength();
 		}
-		else {
+
+		if (count > dataLength) {
+			pIC->prevFlag = true;
+			pIC->bytesToRecv = count - dataLength;
+			pIC->prevData = new char[pIC->bytesToRecv];
+			ZeroMemory(pIC->prevData, pIC->bytesToRecv);
+			memcpy(pIC->prevData, pIC->wsabuf.buf + (count - pack.getPacketLength()), pIC->bytesToRecv);
+		}
+		else if (count == 0) {
 			Log.write("[IOCP]:in dorecv, invalid data 3.");
 		}
+		else if (count < dataLength) {
+			Log.write("[IOCP]:in dorecv, invalid remain data.");
+		}
+
 	}
 
 	// 然后开始投递下一个WSARecv请求
