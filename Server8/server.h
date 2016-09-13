@@ -965,6 +965,8 @@ private:
 
 	bool doSend(SocketContext * pSC, IOCPContext * pIC, int dataLength);
 
+	void postClose(SocketContext * pSC);
+
 	void doCloseConnection(IOCPModule * pIOCPModule, SocketContext * pSC);
 
 	bool isValidOperation(IOCPOperationSignal t) {

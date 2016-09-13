@@ -186,6 +186,7 @@ bool svr::IOCPModule::doAccept(SocketContext * pSC, IOCPContext * pIC, int dataL
 			Log.write("[IOCP]:in doaccept,process data");
 		}
 		else {
+			//wait data
 			pContext->prevFlag = true;
 			pContext->prevData = new char[packet.getPacketLength()];
 			ZeroMemory(pContext->prevData, packet.getPacketLength());
@@ -248,38 +249,51 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 
 	protocol::Packet packet;
 	if (pIC->prevFlag) {
-		if (packet.matchHeader(pIC->wsabuf.buf, dataLength) == true) {
-			//prevdata is invalid
-
-
+		if (pIC->bytesToRecv == dataLength) {
+			//process data
+			Log.write("[IOCP]:in dorecv, process data.");
+			pIC->prevFlag = false;
+			pIC->bytesToRecv = 0;
+			delete[] pIC->prevData;
+		}
+		else if (dataLength < pIC->bytesToRecv) {
+			//wait for data
+			Log.write("[IOCP]:in dorecv, wait data 1.");
+			memcpy(pIC->prevData + pIC->packet.getPacketLength() - pIC->bytesToRecv, pIC->wsabuf.buf, dataLength);
+			pIC->bytesToRecv -= dataLength;
+		}
+		else if (dataLength > pIC->bytesToRecv && dataLength <= bufferSize) {
+			//todo
+			//packet splicing
+			protocol::Packet pac;
 		}
 		else {
-			if (pIC->bytesToRecv == dataLength) {
-				//process data
-
-			}
-			else if(dataLength < pIC->bytesToRecv){
-				//wait for data
-				memcpy(pIC->prevData + pIC->packet.getPacketLength() - pIC->bytesToRecv, pIC->wsabuf.buf, dataLength);
-				pIC->bytesToRecv -= dataLength;
-			}
-			else {
-				//prevdata is invalid
-
-			}
+			//prevdata is invalid
+			Log.write("[IOCP]:in dorecv, invalid data 2.");
+			pIC->prevFlag = false;
+			pIC->bytesToRecv = 0;
+			delete[] pIC->prevData;
 		}
 	}
 	else {
 		if (packet.matchHeader(pIC->wsabuf.buf, dataLength) == true) {
 			if (packet.getPacketLength() == dataLength) {
 				//process data
+				Log.write("[IOCP]:in dorecv, process data.");
 			}
 			else {
-
+				//wait data
+				Log.write("[IOCP]:in dorecv, wait data 2.");
+				pIC->packet = packet;
+				pIC->prevFlag = true;
+				pIC->prevData = new char[packet.getPacketLength()];
+				ZeroMemory(pIC->prevData, packet.getPacketLength());
+				pIC->bytesToRecv = packet.getPacketLength() - dataLength;
+				memcpy(pIC->prevData, pIC->wsabuf.buf, dataLength);
 			}
 		}
 		else {
-
+			Log.write("[IOCP]:in dorecv, invalid data 3.");
 		}
 	}
 
@@ -306,6 +320,11 @@ bool svr::IOCPModule::postSend(IOCPContext * pIC){
 bool svr::IOCPModule::doSend(SocketContext * pSC, IOCPContext * pIC, int dataLength){
 
 	return false;
+}
+
+void svr::IOCPModule::postClose(SocketContext * pSC){
+
+
 }
 
 void svr::IOCPModule::doCloseConnection(IOCPModule * pIOCPModule, SocketContext * pSC){
