@@ -46,7 +46,8 @@ response:
 note:
 	1. HeaderLength + ContentLength = packet length , and head length < 256 bytes
 	2.time stamp format : YYYY/MM/DD HH:MM:SS:MMM
-	3.JSON data example
+	3.packet length <= 0x800100 bytes
+	4.JSON data example
 	{
 		"InstanceName":"Server",
 		"Key":"value"

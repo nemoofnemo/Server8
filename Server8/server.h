@@ -798,7 +798,8 @@ public:
 
 //iocp module
 class svr::IOCPModule : public Object {
-	
+
+public:	
 	struct IOCPContext {
 		OVERLAPPED			overlapped;
 		SOCKET				socket;
@@ -903,6 +904,7 @@ class svr::IOCPModule : public Object {
 
 	};
 
+private:
 	HANDLE							hIOCP;
 	SocketContext						listenSocketContext;
 	std::map<SocketContext*, SOCKET>	socketContextMap;
@@ -1033,6 +1035,8 @@ public:
 	}
 
 	bool sendData(SOCKET s, const char * data, int length);
+
+	bool sendData(SocketContext * pSC, const char * data, int length);
 };
 
 //

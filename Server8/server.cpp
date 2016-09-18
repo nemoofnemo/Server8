@@ -122,6 +122,48 @@ bool svr::IOCPModule::stopIOCP(void){
 	return false;
 }
 
+bool svr::IOCPModule::sendData(SOCKET s, const char * data, int length)
+{
+	return false;
+}
+
+bool svr::IOCPModule::sendData(SocketContext * pSC, const char * data, int length){
+	if (!data || !pSC) {
+		Log.write("[IOCP]:in senddata, null pointer");
+		return false;
+	}
+
+	if (length <= 0 || length > 0x800100) {
+		Log.write("[IOCP]:in sendData invalid data length.");
+		return false;
+	}
+
+	//check socketcontext
+	bool flag = false;
+	lock.AcquireShared();
+	map<SocketContext*, SOCKET>::iterator it = socketContextMap.find(pSC);
+	if (it == socketContextMap.end()) {
+		flag = true;
+	}
+	lock.ReleaseShared();
+	if (flag == true) {
+		return false;
+	}
+
+	IOCPContext * pContext = pSC->createIOCPContext(length);
+	pContext->socket = pSC->socket;
+	memcpy(&pContext->addr, &pSC->addr, sizeof(SOCKADDR_IN));
+	memcpy(pContext->wsabuf.buf, data, length);
+	pContext->operation = SIG_SEND;
+	pContext->bytesToRecv = length;
+	if (!postSend(pContext)) {
+		Log.write("[IOCP]:in sendData , send error.");
+		pSC->removeIOCPContext(pContext->contextIndex);
+	}
+
+	return false;
+}
+
 bool svr::IOCPModule::postAccept(IOCPContext * pIC){
 	if (NULL == pIC)
 		return false;
@@ -275,7 +317,7 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 			//packet splicing
 			while (count < dataLength && pack.matchHeader(pIC->wsabuf.buf + count, dataLength - count)) 
 			{
-				if (dataLength - count > pack.getPacketLength()) {
+				if (dataLength - count >= pack.getPacketLength()) {
 					Log.write("[IOCP]:in dorecv, process data.");
 				}
 				count += pack.getPacketLength();
@@ -300,7 +342,7 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 	else {
 		while (count < dataLength && pack.matchHeader(pIC->wsabuf.buf + count, dataLength - count))
 		{
-			if (dataLength - count > pack.getPacketLength()) {
+			if (dataLength - count >= pack.getPacketLength()) {
 				Log.write("[IOCP]:in dorecv, process data.");
 			}
 			count += pack.getPacketLength();
@@ -331,7 +373,8 @@ bool svr::IOCPModule::postSend(IOCPContext * pIC){
 	DWORD dwBytes = 0;
 	//WSABUF *pWSAbuf = &pIC->wsabuf;
 	OVERLAPPED *pOl = &pIC->overlapped;
-	int temp = WSASend(pIC->socket, &pIC->wsabuf, 1, &dwBytes, dwFlags, pOl, NULL);
+	int temp = WSASend(pIC->socket, &pIC->wsabuf + (pIC->wsabuf.len - pIC->bytesToRecv), 1, &dwBytes, dwFlags, pOl, NULL);
+	pIC->operation = SIG_SEND;
 
 	if ((SOCKET_ERROR == temp) && (WSA_IO_PENDING != WSAGetLastError()))
 	{
@@ -343,8 +386,27 @@ bool svr::IOCPModule::postSend(IOCPContext * pIC){
 }
 
 bool svr::IOCPModule::doSend(SocketContext * pSC, IOCPContext * pIC, int dataLength){
-
-	return false;
+	bool ret = false;
+	if (dataLength == pIC->bytesToRecv) {
+		//process data
+		Log.write("[IOCP]:in dosend, send success");
+		pSC->removeIOCPContext(pIC->contextIndex);
+		ret = true;
+	}
+	else if(dataLength < pIC->bytesToRecv){
+		pIC->bytesToRecv -= dataLength;
+		if (postSend(pIC)) {
+			Log.write("[IOCP]:in dosend, wait send");
+			ret = true;
+		}
+		else {
+			pSC->removeIOCPContext(pIC->contextIndex);
+		}
+	}
+	else {
+		Log.write("[IOCP]:in dosend invalid data length.");
+	}
+	return ret;
 }
 
 void svr::IOCPModule::postClose(SocketContext * pSC){
@@ -399,28 +461,28 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 				pIOCPModule->doRecv(pSC, pIC, dwBytesTransfered);
 				break;
 			case SIG_SEND:
-
+				pIOCPModule->doSend(pSC, pIC, dwBytesTransfered);
 				break;
 			case SIG_CLOSE_CONNECTION:
 				pIOCPModule->doCloseConnection(pIOCPModule, pSC);
 				break;
 			case SIG_NULL:
-
+				Log.write("[IOCP]:threadID %d SIG_NULL.", threadID);
 				break;
 			case SIG_EXIT:
-				Log.write("[server]:exit signal received.\n");
+				Log.write("[IOCP]:exit signal received.\n");
 				exitFlag = true;
 				break;
 			default:
-				Log.write("[server]:invalid signal received.thread exit unnormally\n");
+				Log.write("[IOCP]:invalid signal received.thread exit unnormally\n");
 				exitFlag = true;
 				break;
 			}
 		}
 		else {
 			//send close connection signal.
-			if (!pSC->closeFlag) {
-				IOCPContext * pCloseContext = pSC->createIOCPContext();
+			if (!pSC->closeFlag) {//todo:confirm close
+				IOCPContext * pCloseContext = pSC->createIOCPContext(4096);
 				pCloseContext->operation = SIG_CLOSE_CONNECTION;
 				PostQueuedCompletionStatus(pIOCPModule->hIOCP, 1, (ULONG_PTR)pSC, &pCloseContext->overlapped);
 				pSC->closeFlag = true;
