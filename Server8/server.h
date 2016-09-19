@@ -905,6 +905,9 @@ public:
 	};
 
 private:
+
+	//iocp core
+
 	HANDLE							hIOCP;
 	SocketContext						listenSocketContext;
 	std::map<SocketContext*, SOCKET>	socketContextMap;
@@ -917,6 +920,14 @@ private:
 	LPFN_ACCEPTEX					lpfnAcceptEx;
 	//GetAcceptExSockaddrs µÄº¯ÊýÖ¸Õë
 	LPFN_GETACCEPTEXSOCKADDRS lpfnGetAcceptExSockAddrs;
+
+	//config
+
+	int maxThreadNum;
+	int maxStandbySocket;
+	int connectionLiveTime;
+	int acceptTimeout;
+	int deamonThreadWakeInternal;
 
 public:
 	class IOCPCallback {
@@ -967,7 +978,7 @@ private:
 
 	bool doSend(SocketContext * pSC, IOCPContext * pIC, int dataLength);
 
-	void postClose(SocketContext * pSC);
+	void postCloseConnection(SocketContext * pSC);
 
 	void doCloseConnection(IOCPModule * pIOCPModule, SocketContext * pSC);
 
@@ -1019,6 +1030,8 @@ public:
 	}
 
 	bool initIOCP(void);
+
+	void run(void);
 
 	bool stopIOCP(void);
 

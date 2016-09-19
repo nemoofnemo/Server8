@@ -355,16 +355,14 @@ private:
 	}
 
 	bool init(DWORD dwSpinCount) {
-		bool ret = InitializeCriticalSectionAndSpinCount(&lock, dwSpinCount);
-		this->refCount = 0;
-
-		if (ret) {
-			lockFlag = true;
-		}
-		else {
+		bool ret = false;
+		if (!InitializeCriticalSectionAndSpinCount(&lock, dwSpinCount)) {
 			lockFlag = false;
 		}
-
+		else {
+			lockFlag = true;
+			ret = true;
+		}
 		return ret;
 	}
 
@@ -706,9 +704,9 @@ public:
 
 		WaitForSingleObject(hEvent, 1000); //等待500毫秒
 		res = GetSystemTimes(&idleTime, &kernelTime, &userTime);
-		int idle = CompareFileTime(preidleTime, idleTime);
-		int kernel = CompareFileTime(prekernelTime, kernelTime);
-		int user = CompareFileTime(preuserTime, userTime);
+		unsigned long long idle = CompareFileTime(preidleTime, idleTime);
+		unsigned long long kernel = CompareFileTime(prekernelTime, kernelTime);
+		unsigned long long user = CompareFileTime(preuserTime, userTime);
 		int cpu = (kernel + user - idle) * 100 / (kernel + user);
 		//int cpuidle = (idle) * 100 / (kernel + user);
 		////cout << "CPU利用率:" << cpu << "%" << "      CPU空闲率:" <<cpuidle << "%" <<endl;

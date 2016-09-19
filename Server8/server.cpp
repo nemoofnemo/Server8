@@ -159,9 +159,10 @@ bool svr::IOCPModule::sendData(SocketContext * pSC, const char * data, int lengt
 	if (!postSend(pContext)) {
 		Log.write("[IOCP]:in sendData , send error.");
 		pSC->removeIOCPContext(pContext->contextIndex);
+		return false;
 	}
 
-	return false;
+	return true;
 }
 
 bool svr::IOCPModule::postAccept(IOCPContext * pIC){
@@ -222,10 +223,11 @@ bool svr::IOCPModule::doAccept(SocketContext * pSC, IOCPContext * pIC, int dataL
 	Log.write("[client]: %s:%d\ncontent:%s", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), pIC->wsabuf.buf);
 
 	protocol::Packet packet;
+	bool processFlag = false;
 	if (packet.matchHeader(pIC->wsabuf.buf, dataLength) == true) {
 		if (packet.getPacketLength() == dataLength) {
 			//process data
-			Log.write("[IOCP]:in doaccept,process data");
+			processFlag = true;
 		}
 		else {
 			//wait data
@@ -255,6 +257,11 @@ bool svr::IOCPModule::doAccept(SocketContext * pSC, IOCPContext * pIC, int dataL
 	lock.AcquireExclusive();
 	socketContextMap.insert(std::pair<SocketContext*, SOCKET>(pSocketContext, pSocketContext->socket));
 	lock.ReleaseExclusive();
+
+	if (processFlag) {
+		Log.write("[IOCP]:in doaccept,process data");
+		//todo:process data
+	}
 
 	// 5. 使用完毕之后，把Listen Socket的那个IoContext重置，然后准备投递新的AcceptEx
 	pIC->ResetBuffer();
@@ -405,21 +412,31 @@ bool svr::IOCPModule::doSend(SocketContext * pSC, IOCPContext * pIC, int dataLen
 	}
 	else {
 		Log.write("[IOCP]:in dosend invalid data length.");
+		pSC->removeIOCPContext(pIC->contextIndex);
 	}
 	return ret;
 }
 
-void svr::IOCPModule::postClose(SocketContext * pSC){
-
-
+void svr::IOCPModule::postCloseConnection(SocketContext * pSC){
+	if ( pSC && !pSC->closeFlag) {
+		IOCPContext * pCloseContext = pSC->createIOCPContext(4096);
+		pCloseContext->operation = SIG_CLOSE_CONNECTION;
+		PostQueuedCompletionStatus(hIOCP, 1, (ULONG_PTR)pSC, &pCloseContext->overlapped);
+		pSC->closeFlag = true;
+	}
 }
 
 void svr::IOCPModule::doCloseConnection(IOCPModule * pIOCPModule, SocketContext * pSC){
 	pIOCPModule->lock.AcquireExclusive();
-	Log.write("[client]:  %s:%d disconnect\n", inet_ntoa(pSC->addr.sin_addr), ntohs(pSC->addr.sin_port));
-	delete pSC;
 	std::map<SocketContext*, SOCKET>::iterator it = pIOCPModule->socketContextMap.find(pSC);
-	pIOCPModule->socketContextMap.erase(it);
+	if (it != pIOCPModule->socketContextMap.end()) {
+		Log.write("[client]:  %s:%d disconnect\n", inet_ntoa(pSC->addr.sin_addr), ntohs(pSC->addr.sin_port));
+		delete pSC;
+		pIOCPModule->socketContextMap.erase(it);
+	}
+	else {
+		Log.write("[IOCP]:in doclose, invalid socket context.");
+	}
 	pIOCPModule->lock.ReleaseExclusive();
 }
 
@@ -440,28 +457,43 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 
 		//error
 		if (!flag) {
-			Log.write("[IOCP]:threadID %d, IOCP queue error, code = %d.", threadID, GetLastError());
+			Log.write("[IOCP]:in IOCPWorkThread, threadID %d, IOCP queue error, code = %d.", threadID, GetLastError());
 			if (pOverlapped == NULL) { 
-				//todo : send close connection signal
+				Log.write("[IOCP]:in IOCPWorkThreead, unknown error.");
+			}
+			else {
+				//send close connection signal
+				Log.write("[IOCP]:in IOCPWorkThreead, release socket context.");
+				pIOCPModule->postCloseConnection(pSC);
 			}
 			continue;
 		}
-		
-		//process data
-		std::map<SocketContext*, SOCKET>::iterator it;
+
 		IOCPContext * pIC = CONTAINING_RECORD(pOverlapped, IOCPContext, overlapped);
 		Log.write("[IOCP]:threadID %d io request %d bytes", threadID, dwBytesTransfered);
+		pSC->timer.start();
 
+		//process data
 		if (dwBytesTransfered > 0) {
 			switch (pIC->operation) {
 			case SIG_ACCEPT:
-				pIOCPModule->doAccept(pSC, pIC, dwBytesTransfered);
+				if (!pIOCPModule->doAccept(pSC, pIC, dwBytesTransfered)) {
+					//accept failed, release IOCPContext
+					Log.write("[IOCP]:in IOCPWorkThreead, postaccept error.");
+					pIOCPModule->listenSocketContext.removeIOCPContext(pIC->contextIndex);
+				}
 				break;
 			case SIG_RECV:
-				pIOCPModule->doRecv(pSC, pIC, dwBytesTransfered);
+				if (!pIOCPModule->doRecv(pSC, pIC, dwBytesTransfered)) {
+					Log.write("[IOCP]:in IOCPWorkThreead, dorecv error.");
+					pIOCPModule->postCloseConnection(pSC);
+				}
 				break;
 			case SIG_SEND:
-				pIOCPModule->doSend(pSC, pIC, dwBytesTransfered);
+				if (!pIOCPModule->doSend(pSC, pIC, dwBytesTransfered)) {
+					Log.write("[IOCP]:in IOCPWorkThreead, dosend error.");
+					pIOCPModule->postCloseConnection(pSC);
+				}
 				break;
 			case SIG_CLOSE_CONNECTION:
 				pIOCPModule->doCloseConnection(pIOCPModule, pSC);
@@ -481,11 +513,13 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 		}
 		else {
 			//send close connection signal.
-			if (!pSC->closeFlag) {//todo:confirm close
-				IOCPContext * pCloseContext = pSC->createIOCPContext(4096);
-				pCloseContext->operation = SIG_CLOSE_CONNECTION;
-				PostQueuedCompletionStatus(pIOCPModule->hIOCP, 1, (ULONG_PTR)pSC, &pCloseContext->overlapped);
-				pSC->closeFlag = true;
+			char ch = '\0';
+			if (0 != recv(pSC->socket, &ch, 0, 0)) {//confirm close signal
+				Log.write("[IOCP]:in workthread, send SIG_CLOSE");
+				pIOCPModule->postCloseConnection(pSC);
+			}
+			else {
+				Log.write("[IOCP]:in workthread, empty packet received.");
 			}
 		}
 
