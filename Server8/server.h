@@ -861,6 +861,7 @@ public:
 			ZeroMemory(&overlapped, sizeof(OVERLAPPED));
 			socket = INVALID_SOCKET;
 			ZeroMemory(&addr, sizeof(SOCKADDR_IN));
+			timer.start();
 			count = 0;
 			closeFlag = false;
 		}
@@ -911,6 +912,7 @@ private:
 	HANDLE							hIOCP;
 	SocketContext						listenSocketContext;
 	std::map<SocketContext*, SOCKET>	socketContextMap;
+	std::set<SocketContext*>			socketPoolSet;
 	int									bufferSize;
 	int									port;
 	svrutil::SRWLock					lock;
@@ -927,7 +929,7 @@ private:
 	int maxStandbySocket;
 	int connectionLiveTime;
 	int acceptTimeout;
-	int deamonThreadWakeInternal;
+	int daemonThreadWakeInternal;
 
 public:
 	class IOCPCallback {
@@ -965,6 +967,8 @@ private:
 	}
 
 	bool GetFunctionAddress(void);
+
+	bool InsertAcceptSocketContext(void);
 
 	bool postAccept(IOCPContext * pIC);
 

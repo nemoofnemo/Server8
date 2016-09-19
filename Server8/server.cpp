@@ -40,6 +40,29 @@ bool svr::IOCPModule::GetFunctionAddress(void){
 	return true;
 }
 
+bool svr::IOCPModule::InsertAcceptSocketContext(void){
+	bool ret = false;
+	SocketContext * pSocketContext = new SocketContext;
+	pSocketContext->socket = listenSocketContext.socket;
+	memcpy_s(&pSocketContext->addr, sizeof(SOCKADDR_IN), &listenSocketContext.addr, sizeof(SOCKADDR_IN));
+
+	IOCPContext * pContext = pSocketContext->createIOCPContext();
+	pContext->operation = svr::IOCPOperationSignal::SIG_ACCEPT;
+
+	if (!postAccept(pContext)) {
+		Log.write("[IOCP]:in InsertSocketContext post failed");
+		delete pSocketContext;
+	}
+	else {
+		Log.write("[IOCP]:in InsertSocketContext post success");	
+		socketContextMap.insert(std::pair<SocketContext*, SOCKET>(pSocketContext, pSocketContext->socket));
+		socketPoolSet.insert(pSocketContext);
+		ret = true;
+	}
+
+	return ret;
+}
+
 bool svr::IOCPModule::initIOCP(void){
 	LoadSocketLib();
 	listenSocketContext.socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
@@ -100,18 +123,30 @@ bool svr::IOCPModule::initIOCP(void){
 
 	//post accept
 
+	lock.AcquireExclusive();
 	for (int i = 0; i < 1; ++i) {
-		//default buffer size
-		IOCPContext * pContext = listenSocketContext.createIOCPContext();
-		pContext->operation = svr::IOCPOperationSignal::SIG_ACCEPT;
-		if (postAccept(pContext) == false) {
+		if (!InsertAcceptSocketContext()) {
 			Log.write("[IOCP]:in initIOCP post failed");
-			listenSocketContext.removeIOCPContext(pContext->contextIndex);
 		}
 		else {
-			//Log.write("[IOCP]:in initIOCP post success");
+			Log.write("[IOCP]:in initIOCP post success");
 		}
 	}
+	lock.ReleaseExclusive();
+	Log.write("[IOCP]:in initIOCP post done.");
+
+	//for (int i = 0; i < 1; ++i) {
+	//	//default buffer size
+	//	IOCPContext * pContext = listenSocketContext.createIOCPContext();
+	//	pContext->operation = svr::IOCPOperationSignal::SIG_ACCEPT;
+	//	if (postAccept(pContext) == false) {
+	//		Log.write("[IOCP]:in initIOCP post failed");
+	//		listenSocketContext.removeIOCPContext(pContext->contextIndex);
+	//	}
+	//	else {
+	//		//Log.write("[IOCP]:in initIOCP post success");
+	//	}
+	//}
 
 	Sleep(200);
 	return true;
@@ -245,6 +280,7 @@ bool svr::IOCPModule::doAccept(SocketContext * pSC, IOCPContext * pIC, int dataL
 	}
 
 	//3.
+	pContext->operation = SIG_RECV;
 	if (postRecv(pContext) == false) {
 		RELEASE_SOCKET(pSocketContext->socket);
 		delete pSocketContext;
@@ -446,7 +482,6 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 	DWORD			threadID = GetCurrentThreadId();
 	IOCPModule *		pIOCPModule = (IOCPModule*)Parameter;
 	SocketContext *	pSC = NULL;
-	IOCPContext *		pIC = NULL;
 	HANDLE			handle = pIOCPModule->hIOCP;
 	bool exitFlag = false;
 
@@ -514,9 +549,37 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 		else {
 			//send close connection signal.
 			char ch = '\0';
-			if (0 != recv(pSC->socket, &ch, 0, 0)) {//confirm close signal
-				Log.write("[IOCP]:in workthread, send SIG_CLOSE");
-				pIOCPModule->postCloseConnection(pSC);
+			recv(pIC->socket, &ch, 0, 0);
+			int recvCount = recv(pIC->socket, &ch, 0, 0);
+			if ( recvCount < 0 ) {//confirm close signal
+				if (SIG_ACCEPT == pIC->operation) {
+					Log.write("[IOCP]:in workThread, empty connection closed.");
+					closesocket(pIC->socket);
+
+					if (!pIOCPModule->postAccept(pIC)) {
+						pIOCPModule->lock.AcquireExclusive();
+
+						std::map<SocketContext*, SOCKET>::iterator it1 = pIOCPModule->socketContextMap.find(pSC);
+						if (it1 != pIOCPModule->socketContextMap.end()) {				
+							pIOCPModule->socketContextMap.erase(it1);
+						}
+
+						std::set<SocketContext*>::iterator it2 = pIOCPModule->socketPoolSet.find(pSC);
+						if (it2 != pIOCPModule->socketPoolSet.end()) {
+							pIOCPModule->socketPoolSet.erase(it2);
+						}
+						delete pSC;
+
+						pIOCPModule->lock.ReleaseExclusive();
+					}
+					else {
+						Log.write("[IOCP]:in workThread, post accept success.");
+					}
+				}
+				else {
+					Log.write("[IOCP]:in workthread, send SIG_CLOSE");
+					pIOCPModule->postCloseConnection(pSC);
+				}
 			}
 			else {
 				Log.write("[IOCP]:in workthread, empty packet received.");
