@@ -550,8 +550,8 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 			//send close connection signal.
 			char ch = '\0';
 			recv(pIC->socket, &ch, 0, 0);
-			int recvCount = recv(pIC->socket, &ch, 0, 0);
-			if ( recvCount < 0 ) {//confirm close signal
+			int recvCount = recv(pIC->socket, NULL, 0, 0);
+			if ( true ) {//confirm close signal
 				if (SIG_ACCEPT == pIC->operation) {
 					Log.write("[IOCP]:in workThread, empty connection closed.");
 					closesocket(pIC->socket);
