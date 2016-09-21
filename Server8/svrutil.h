@@ -50,6 +50,13 @@ public:
 		//...
 	}
 
+	//start record
+	void record(void) {
+		if (!QueryPerformanceCounter(&time)) {
+			exit(TIMER_MODULE_ERROR);
+		}
+	}
+
 	//start timer
 	void start(void) {
 		if (!QueryPerformanceCounter(&time)) {

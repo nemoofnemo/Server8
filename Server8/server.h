@@ -904,13 +904,21 @@ public:
 
 	};
 
+	class IOCPCallback {
+	public:
+		virtual int run(SocketContext* pSC, const char * data, int length) {
+			Log.write("[Callback]:default callback invoked.");
+			return 0;
+		}
+	};
+
 private:
 
-	//iocp core
+	//iocp core: initialized in initIOCP()
 
 	HANDLE							hIOCP;
 	SocketContext						listenSocketContext;
-	std::map<SocketContext*, SOCKET>	socketContextMap;
+	std::map<SocketContext*, SOCKET>		socketContextMap;
 	int									bufferSize;
 	int									port;
 	svrutil::SRWLock					lock;
@@ -921,23 +929,16 @@ private:
 	//GetAcceptExSockaddrs µÄº¯ÊýÖ¸Õë
 	LPFN_GETACCEPTEXSOCKADDRS lpfnGetAcceptExSockAddrs;
 
-	//config
+	//config : initialized in constructor
 
 	int maxThreadNum;
 	int maxStandbySocket;
 	int connectionLiveTime;
 	int acceptTimeout;
-	int deamonThreadWakeInternal;
+	int daemonThreadWakeInternal;
 
-public:
-	class IOCPCallback {
-	public:
-		virtual int run(SOCKET s,const SOCKADDR_IN * addr, const char * data, int length) {
+	//callback: initialized in constructor, set in setCallback()
 
-		}
-	};
-
-private:
 	IOCPCallback * pRecvCallback;
 	IOCPCallback * pSendCallback;
 
@@ -1013,7 +1014,11 @@ public:
 		pRecvCallback(NULL),
 		pSendCallback(NULL)
 	{
-
+		maxThreadNum = 1;					//thread pool count
+		maxStandbySocket = 1;					//socket pool count
+		connectionLiveTime = 1200000;		//default 20min
+		acceptTimeout = 5000;				//5s
+		daemonThreadWakeInternal = 5000;	//5s
 	}
 
 	IOCPModule(int bufSize, int port) : 
@@ -1022,7 +1027,11 @@ public:
 		pRecvCallback(NULL),
 		pSendCallback(NULL)
 	{
-
+		maxThreadNum = 1;					//thread pool count
+		maxStandbySocket = 1;					//socket pool count
+		connectionLiveTime = 1200000;		//default 20min
+		acceptTimeout = 5000;				//5s
+		daemonThreadWakeInternal = 5000;	//5s
 	}
 
 	~IOCPModule() {
