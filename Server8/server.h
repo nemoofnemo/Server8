@@ -84,6 +84,7 @@ namespace svr {
 		SIG_ACCEPT,
 		SIG_RECV,
 		SIG_SEND,
+		SIG_CLOSE_CONNECTION,
 		SIG_EXIT
 	};
 
@@ -91,6 +92,8 @@ namespace svr {
 		IOCP_CREATE_ERROR = -2,
 		SOCKET_BIND_ERROR = -3,
 		SOCKET_LISTEN_ERROR = -4,
+
+		IOCP_CONTEXT_BUSIZE_ERROR = 301,
 
 		SESSION_INVALID_ARGUMENTS = 401,
 		SESSION_MANAGER_ERROR = 402,
@@ -795,60 +798,155 @@ public:
 
 //iocp module
 class svr::IOCPModule : public Object {
-private:
+
+public:	
 	struct IOCPContext {
 		OVERLAPPED			overlapped;
 		SOCKET				socket;
 		SOCKADDR_IN			addr;
-		WSABUF				wsabuf;
+		WSABUF				wsabuf;	
 		IOCPOperationSignal	operation;
+		int						contextIndex;
 
-		//warnging
+		//warning : memory control
 		bool					prevFlag;
-		protocol::Packet		packet;
 		int						bytesToRecv;
+		char *					prevData;
+		protocol::Packet		packet;
 
 		IOCPContext(int bufSize = svr::ConstVar::DEFAULT_BUF_SIZ) {
-			socket = INVALID_SOCKET;
-			wsabuf.len = bufSize;
-			wsabuf.buf = new char[bufSize];
-			ZeroMemory(&overlapped, sizeof(OVERLAPPED));
-			ZeroMemory(&addr, sizeof(SOCKADDR_IN));
-			ZeroMemory(this->wsabuf.buf, bufSize);
-			operation = SIG_NULL;
-			prevFlag = false;
-			bytesToRecv = 0;
+			if (bufSize > 0) {
+				ZeroMemory(&overlapped, sizeof(OVERLAPPED));
+				socket = INVALID_SOCKET;
+				ZeroMemory(&addr, sizeof(SOCKADDR_IN));
+				wsabuf.len = bufSize;
+				wsabuf.buf = new char[bufSize];
+				ZeroMemory(wsabuf.buf, bufSize);
+				operation = SIG_NULL;
+				contextIndex = 0;
+				prevFlag = false;
+				bytesToRecv = 0;
+			}
+			else {
+				Log.write("[IOCPContext]:invalid buffer size");
+				exit(IOCP_CONTEXT_BUSIZE_ERROR);
+			}
 		}
 
 		~IOCPContext() {
 			if (prevFlag) {
-				delete[] packet.pData;
+				delete[] prevData;
 			}
 
 			delete[] wsabuf.buf;
-			RELEASE_SOCKET(socket);
 		}
 
 		void ResetBuffer(void) {
-			ZeroMemory(this->wsabuf.buf, this->wsabuf.len);
+			ZeroMemory(wsabuf.buf, wsabuf.len);
+		}
+
+	};
+
+	struct SocketContext {
+		OVERLAPPED			overlapped;
+		SOCKET				socket;
+		SOCKADDR_IN			addr;
+		svrutil::SRWLock		socketLock;
+		svrutil::Timer			timer;
+		std::map<int, IOCPContext*> IOCPContextMap;
+		int						count;
+		bool					closeFlag;
+
+		SocketContext() {
+			ZeroMemory(&overlapped, sizeof(OVERLAPPED));
+			socket = INVALID_SOCKET;
+			ZeroMemory(&addr, sizeof(SOCKADDR_IN));
+			count = 0;
+			closeFlag = false;
+		}
+
+		~SocketContext() {
+			std::map<int, IOCPContext*>::iterator it = IOCPContextMap.begin();
+			std::map<int, IOCPContext*>::iterator end = IOCPContextMap.end();
+			while (it != end) {
+				delete it->second;
+				++it;
+			}
+			RELEASE_SOCKET(socket);
+		}
+
+		IOCPContext * createIOCPContext(int bufSize = svr::ConstVar::DEFAULT_BUF_SIZ) {
+			IOCPContext * pIC= new IOCPContext(bufSize);
+			socketLock.AcquireExclusive();
+			pIC->contextIndex = count;
+			count++;
+			IOCPContextMap.insert(std::pair<int, IOCPContext*>(count, pIC));
+			socketLock.ReleaseExclusive();
+			//todo : return NULL
+			return pIC;
+		}
+
+		bool removeIOCPContext(int contextIndex) {
+			bool ret = false;
+			socketLock.AcquireExclusive();
+			std::map<int, IOCPContext*>::iterator it = IOCPContextMap.find(contextIndex);
+			if (it != IOCPContextMap.end()) {
+				delete it->second;
+				IOCPContextMap.erase(it);
+				ret = true;
+			}
+			else {
+				ret = false;
+			}
+			socketLock.ReleaseExclusive();
+			return ret;
+		}
+
+	};
+
+	class IOCPCallback {
+	public:
+		virtual int run(SocketContext* pSC, const char * data, int length) {
+			Log.write("[Callback]:default callback invoked.");
+			return 0;
 		}
 	};
 
-	HANDLE					hIOCP;
-	SOCKET					svrSocket;
-	SOCKADDR_IN				svrAddr;
-	std::list<IOCPContext*>	socketPool;
-	std::map<SOCKET, IOCPContext*>	contextMap;
-	int							bufferSize;
-	int							port;
+private:
 
-	svrutil::SRWLock			IOCPLock;
-	svrutil::ThreadPool			IOCPThreadPool;
+	//iocp core: initialized in initIOCP()
+
+	HANDLE							hIOCP;
+	SocketContext						listenSocketContext;
+	std::map<SocketContext*, SOCKET>		socketContextMap;
+	int									bufferSize;
+	int									port;
+	svrutil::SRWLock					lock;
+	svrutil::ThreadPool					IOCPThreadPool;
+	svr::Status							status;
 
 	//AcceptEx 的函数指针
-	LPFN_ACCEPTEX			lpfnAcceptEx;
+	LPFN_ACCEPTEX					lpfnAcceptEx;
 	//GetAcceptExSockaddrs 的函数指针
 	LPFN_GETACCEPTEXSOCKADDRS lpfnGetAcceptExSockAddrs;
+
+	//config : initialized in constructor
+
+	int maxThreadNum;
+	int maxStandbySocket;
+	int connectionLiveTime;
+	int acceptTimeout;
+	int daemonThreadWakeInternal;
+
+	int connectNum;
+	int normallyClosedNum;
+	int errorNum;
+	int callbackInvokedNum;
+
+	//callback: initialized in constructor, set in setCallback()
+
+	IOCPCallback * pRecvCallback;
+	IOCPCallback * pSendCallback;
 
 private:
 
@@ -877,14 +975,22 @@ private:
 
 	bool postAccept(IOCPContext * pIC);
 
-	bool doAccept(IOCPContext * pIC, int dataLength);
+	bool doAccept(SocketContext * pSC, IOCPContext * pIC, int dataLength);
 
 	bool postRecv(IOCPContext * pIC);
 
-	bool doRecv(IOCPContext * pIC, int dataLength);
+	bool doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLength);
+
+	bool postSend(IOCPContext * pIC);
+
+	bool doSend(SocketContext * pSC, IOCPContext * pIC, int dataLength);
+
+	void postCloseConnection(SocketContext * pSC);
+
+	void doCloseConnection(IOCPModule * pIOCPModule, SocketContext * pSC);
 
 	bool isValidOperation(IOCPOperationSignal t) {
-		if (t >= 0 && t <= 4) {
+		if (t >= 0 && t <= 5) {
 			return true;
 		}
 		else {
@@ -908,12 +1014,42 @@ private:
 	static void __stdcall IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 
 public:
-	IOCPModule() : bufferSize(svr::ConstVar::DEFAULT_BUF_SIZ), port(svr::ConstVar::DEFAULT_LISTEN_PORT){
+	IOCPModule() : 
+		bufferSize(svr::ConstVar::DEFAULT_BUF_SIZ), 
+		port(svr::ConstVar::DEFAULT_LISTEN_PORT),
+		pRecvCallback(NULL),
+		pSendCallback(NULL)
+	{
+		maxThreadNum = 8;					//thread pool count
+		maxStandbySocket = 16;					//socket pool count
+		connectionLiveTime = 1200000;		//default 20min
+		acceptTimeout = 5000;				//5s
+		daemonThreadWakeInternal = 5000;	//5s
+		status = Status::STATUS_READY;
 
+		connectNum = 0;
+		normallyClosedNum = 0;
+		errorNum = 0;
+		callbackInvokedNum = 0;
 	}
 
-	IOCPModule(int bufSize, int port) : bufferSize(bufSize), port(port) {
+	IOCPModule(int bufSize, int port) : 
+		bufferSize(bufSize), 
+		port(port),
+		pRecvCallback(NULL),
+		pSendCallback(NULL)
+	{
+		maxThreadNum = 1;					//thread pool count
+		maxStandbySocket = 1;					//socket pool count
+		connectionLiveTime = 1200000;		//default 20min
+		acceptTimeout = 5000;				//5s
+		daemonThreadWakeInternal = 5000;	//5s
+		status = Status::STATUS_READY;
 
+		connectNum = 0;
+		normallyClosedNum = 0;
+		errorNum = 0;
+		callbackInvokedNum = 0;
 	}
 
 	~IOCPModule() {
@@ -922,7 +1058,25 @@ public:
 
 	bool initIOCP(void);
 
+	void run(void);
+
 	bool stopIOCP(void);
+
+	bool setRecvCallback(IOCPCallback * pIOCPCallback) {
+		if (pIOCPCallback) {
+			this->pRecvCallback = pIOCPCallback;
+		}
+	}
+
+	bool setSendCallback(IOCPCallback * pIOCPCalback) {
+		if (pIOCPCalback) {
+			this->pSendCallback = pIOCPCalback;
+		}
+	}
+
+	bool sendData(SOCKET s, const char * data, int length);
+
+	bool sendData(SocketContext * pSC, const char * data, int length);
 };
 
 //

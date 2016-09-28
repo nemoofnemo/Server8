@@ -46,7 +46,8 @@ response:
 note:
 	1. HeaderLength + ContentLength = packet length , and head length < 256 bytes
 	2.time stamp format : YYYY/MM/DD HH:MM:SS:MMM
-	3.JSON data example
+	3.packet length <= 0x800100 bytes
+	4.JSON data example
 	{
 		"InstanceName":"Server",
 		"Key":"value"
@@ -79,29 +80,20 @@ public:
 	std::string TimeStamp;
 	std::string InstanceName;
 	std::string SessionID;
-	char * pData;
-
 	const static std::regex pattern;
 public:
-	Packet() : Operation(""), ContentLength(0), TimeStamp(""), pData(NULL), headLength(0) {
+	Packet() : Operation(""), OperationStatus(""), ContentLength(0), TimeStamp(""), headLength(0), InstanceName(""), SessionID("") {
 
 	}
 
-	Packet(const std::string & op, const std::string stamp) : Operation(op), TimeStamp(stamp), pData(NULL), headLength(0), ContentLength(0)
+	Packet(const std::string & op, const std::string stamp) : Operation(op), OperationStatus(""), TimeStamp(stamp), headLength(0), ContentLength(0), InstanceName(""), SessionID("")
 	{
 
 	}
 
-	Packet(const std::string & op, int contLen, const std::string stamp, void * data) : Operation(op), ContentLength(contLen), TimeStamp(stamp), pData((char*)data), headLength(0)
+	Packet(const std::string & op, int contLen, const std::string stamp, void * data) : Operation(op), OperationStatus(""), ContentLength(contLen), TimeStamp(stamp), headLength(0), InstanceName(""), SessionID("")
 	{
 
-	}
-
-	void setContent(void * data, int length) {
-		if (data == NULL || length < 0)
-			return;
-		pData = (char*)data;
-		ContentLength = length;
 	}
 
 	std::string createHeader(void);

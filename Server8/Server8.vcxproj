@@ -91,6 +91,9 @@
     <None Include="..\README.md" />
     <None Include="..\Server8.vsdx" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="reverse.txt" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

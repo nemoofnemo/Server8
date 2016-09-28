@@ -3,7 +3,7 @@
 
 //Operation:NULL\nContentLength:0\nTimeStamp:YYYY/MM/DD HH:MM:SS:MMM\nInstanceName:Server\nSessionID:AAAABBBBCCCCDDDD\n\n
 //(Operation:(\w{1,32})\s(OperationStatus:(\w{1,32})\s)?ContentLength:(\d{1,7})\sTimeStamp:(.{23})\s(InstanceName:(\w{1,32})\s)?(SessionID:(\w{16})\s)?\s).*
-const std::regex protocol::Packet::pattern(R"((Operation:(\w{1,32})\s(OperationStatus:(\w{1,32})\s)?ContentLength:(\d{1,7})\sTimeStamp:(.{23})\s(InstanceName:(\w{1,32})\s)?(SessionID:(\w{16})\s)?\s).*)" );
+const std::regex protocol::Packet::pattern(R"((Operation:(\w{1,32})\s(OperationStatus:(\w{1,32})\s)?ContentLength:(\d{1,7})\sTimeStamp:(.{23})\s(InstanceName:(\w{1,32})\s)?(SessionID:(\w{16})\s)?\s)(.|\s)*)" );
 
 std::string protocol::Packet::createHeader(void)
 {
