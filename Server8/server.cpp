@@ -41,6 +41,11 @@ bool svr::IOCPModule::GetFunctionAddress(void){
 }
 
 bool svr::IOCPModule::initIOCP(void){
+	connectNum = 0;
+	normallyClosedNum = 0;
+	errorNum = 0;
+	callbackInvokedNum = 0;
+
 	//initialize socket library
 	LoadSocketLib();
 	listenSocketContext.socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
@@ -120,13 +125,58 @@ bool svr::IOCPModule::initIOCP(void){
 	}
 	lock.ReleaseExclusive();
 
+	status = Status::STATUS_RUNNING;
 	Sleep(200);
 	return true;
 }
 
+void svr::IOCPModule::run(void){
+	//todo:daemon thread 
+	if (initIOCP()) {
+		Log.write("[IOCP]: in run(), daemon thread start.");
+		while (status != Status::STATUS_HALT) {
+			//1.socket pool
+
+			//2.time to live
+
+			Log.write("[IOCPDaemon]:callback=%d connect=%d closed=%d error=%d.", callbackInvokedNum, connectNum, normallyClosedNum, errorNum);
+			Sleep(daemonThreadWakeInternal);
+		}
+		Log.write("[IOCP]: in run(), daemon thread stop.");
+	}
+	else {
+		Log.write("[IOCP]:cannot startup iocp module.program exit.");
+	}
+}
+
 bool svr::IOCPModule::stopIOCP(void){
-	//todo
-	return false;
+	//todo:need test
+	lock.AcquireExclusive();
+
+	status = Status::STATUS_HALT;
+	closesocket(listenSocketContext.socket);
+	
+	for (int i = 0; i < maxThreadNum; ++i) {
+		SocketContext * pSC = new SocketContext;
+		IOCPContext *pIC = pSC->createIOCPContext();
+		pIC->operation = SIG_EXIT;
+		PostQueuedCompletionStatus(hIOCP, 1, (ULONG_PTR)pSC, &pIC->overlapped);
+	}
+
+	CloseHandle(hIOCP);
+
+	std::map<int, IOCPContext*>::iterator it = listenSocketContext.IOCPContextMap.begin();
+	while (it != listenSocketContext.IOCPContextMap.end()) {
+		closesocket(it->second->socket);
+		delete it->second;
+		++it;
+	}
+	listenSocketContext.IOCPContextMap.clear();
+
+	lock.ReleaseExclusive();
+
+	Log.write("[IOCP]:in stop iocp, release done");
+	return true;
 }
 
 bool svr::IOCPModule::sendData(SOCKET s, const char * data, int length)
@@ -153,21 +203,32 @@ bool svr::IOCPModule::sendData(SocketContext * pSC, const char * data, int lengt
 		flag = true;
 	}
 	lock.ReleaseShared();
-	if (flag == true) {
-		return false;
-	}
-	else {
-		IOCPContext * pContext = pSC->createIOCPContext(length);
+
+	IOCPContext * pContext = NULL;
+	if (flag == true) {//todo:need test
+		pContext = pSC->createIOCPContext(bufferSize);
 		pContext->socket = pSC->socket;
 		memcpy(&pContext->addr, &pSC->addr, sizeof(SOCKADDR_IN));
-		memcpy(pContext->wsabuf.buf, data, length);
-		pContext->operation = SIG_SEND;
-		pContext->bytesToRecv = length;
-		if (!postSend(pContext)) {
-			Log.write("[IOCP]:in sendData , send error.");
+		pContext->operation = SIG_RECV;
+		lock.AcquireExclusive();
+		if (!postRecv(pContext)) {
+			Log.write("[IOCP]:in sendData , post recv error.");
 			pSC->removeIOCPContext(pContext->contextIndex);
-			return false;
 		}
+		socketContextMap.insert(std::pair<SocketContext*, SOCKET>(pSC,pSC->socket));
+		lock.ReleaseExclusive();
+	}
+
+	pContext = pSC->createIOCPContext(length);
+	pContext->socket = pSC->socket;
+	memcpy(&pContext->addr, &pSC->addr, sizeof(SOCKADDR_IN));
+	memcpy(pContext->wsabuf.buf, data, length);
+	pContext->operation = SIG_SEND;
+	pContext->bytesToRecv = length;
+	if (!postSend(pContext)) {
+		Log.write("[IOCP]:in sendData , send error.");
+		pSC->removeIOCPContext(pContext->contextIndex);
+		return false;
 	}
 
 	return true;
@@ -227,8 +288,12 @@ bool svr::IOCPModule::doAccept(SocketContext * pSC, IOCPContext * pIC, int dataL
 		return postAccept(pIC);
 	}
 
-	Log.write(("[IOCP]:%s:%d connect."), inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port));
-	Log.write("[IOCP]:%s:%d\ncontent:%s", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), pIC->wsabuf.buf);
+	char ip[16] = { '\0' };
+	InetNtopA(AF_INET, &clientAddr->sin_addr, ip, 16);
+	Log.write(("[IOCP]:in doaccept, %s:%d connect."), ip, ntohs(clientAddr->sin_port));
+
+	//Log.write(("[IOCP]:%s:%d connect."), inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port));
+	//Log.write("[IOCP]:%s:%d\ncontent:%s", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), pIC->wsabuf.buf);
 
 	protocol::Packet packet;
 	bool processFlag = false;
@@ -268,6 +333,7 @@ bool svr::IOCPModule::doAccept(SocketContext * pSC, IOCPContext * pIC, int dataL
 
 	if (processFlag) {
 		Log.write("[IOCP]:in doaccept,process data");
+		callbackInvokedNum++;
 		if (pRecvCallback) {
 			pRecvCallback->run(pSC,pIC->wsabuf.buf, dataLength);
 		}
@@ -310,7 +376,7 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 {
 	SOCKADDR_IN* ClientAddr = &pIC->addr;
 
-	Log.write("[IOCP]:in dorecv %s:%d\ncontent:%s\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), pIC->wsabuf.buf);
+	//Log.write("[IOCP]:in dorecv %s:%d\ncontent:%s\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), pIC->wsabuf.buf);
 
 	protocol::Packet pack;
 	int count = 0;
@@ -318,6 +384,7 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 		if (pIC->bytesToRecv == dataLength) {
 			//process data
 			Log.write("[IOCP]:in dorecv, process data.");
+			callbackInvokedNum++;
 			if (pRecvCallback) {
 				pRecvCallback->run(pSC, pIC->wsabuf.buf, dataLength);
 			}
@@ -343,6 +410,7 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 			memcpy(pIC->prevData + pIC->packet.getPacketLength() - pIC->bytesToRecv, pIC->wsabuf.buf, pIC->bytesToRecv);
 
 			Log.write("[IOCP]:in dorecv, process data.");
+			callbackInvokedNum++;
 			if (pRecvCallback) {
 				pRecvCallback->run(pSC, pIC->wsabuf.buf, dataLength);
 			}
@@ -363,6 +431,7 @@ bool svr::IOCPModule::doRecv(SocketContext * pSC, IOCPContext * pIC, int dataLen
 			{
 				if (dataLength - count >= pack.getPacketLength()) {
 					Log.write("[IOCP]:in dorecv, process data.");
+					callbackInvokedNum++;
 					if (pRecvCallback) {
 						pRecvCallback->run(pSC, pIC->wsabuf.buf, dataLength);
 					}
@@ -452,6 +521,7 @@ bool svr::IOCPModule::doSend(SocketContext * pSC, IOCPContext * pIC, int dataLen
 	if (dataLength == pIC->bytesToRecv) {
 		//process data
 		Log.write("[IOCP]:in dosend, send success");
+		callbackInvokedNum++;
 		if (pSendCallback) {
 			pSendCallback->run(pSC, pIC->wsabuf.buf, dataLength);
 		}
@@ -494,7 +564,9 @@ void svr::IOCPModule::doCloseConnection(IOCPModule * pIOCPModule, SocketContext 
 	pIOCPModule->lock.AcquireExclusive();
 	std::map<SocketContext*, SOCKET>::iterator it = pIOCPModule->socketContextMap.find(pSC);
 	if (it != pIOCPModule->socketContextMap.end()) {
-		Log.write("[client]:  %s:%d disconnect\n", inet_ntoa(pSC->addr.sin_addr), ntohs(pSC->addr.sin_port));
+		char ip[16] = { '\0' };
+		InetNtopA(AF_INET, &pSC->addr.sin_addr, ip, 16);
+		Log.write("[IOCP]:in doclose, %s:%d disconnect", ip, ntohs(pSC->addr.sin_port));
 		delete pSC;
 		pIOCPModule->socketContextMap.erase(it);
 	}
@@ -519,22 +591,48 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 	while (!exitFlag) {
 		BOOL flag = GetQueuedCompletionStatus(handle, &dwBytesTransfered, (PULONG_PTR)&pSC, &pOverlapped, INFINITE);
 
+		if (pOverlapped) {
+			pIC = CONTAINING_RECORD(pOverlapped, IOCPContext, overlapped);
+			Log.write("[IOCP]:threadID %d io request %d bytes", threadID, dwBytesTransfered);
+		}
+
 		//error
 		if (!flag) {
+			pIOCPModule->errorNum++;
+
 			Log.write("[IOCP]:in IOCPWorkThread, threadID %d, IOCP queue error, code = %d.", threadID, GetLastError());
-			if (pOverlapped == NULL) { 
-				Log.write("[IOCP]:in IOCPWorkThreead, unknown error.");
+			
+			if (!pSC) {
+				Log.write("[IOCP]:in IOCPWorkThreead, pSocketContext null.");
+				continue;
+			}
+			
+			if (!pOverlapped) { 
+				Log.write("[IOCP]:in IOCPWorkThreead, pOverlapped null.");
+				pIOCPModule->postCloseConnection(pSC);
+				continue;
+			}
+
+			if (SIG_ACCEPT == pIC->operation) {
+				Log.write("[IOCP]:in workthread, SIG_ACCEPT error.");
+
+				closesocket(pIC->socket);
+				pIOCPModule->connectNum++;
+				pIOCPModule->normallyClosedNum++;
+				if (!pIOCPModule->postAccept(pIC)) {
+					//post accept failed, release IOCPContext
+					pIOCPModule->listenSocketContext.removeIOCPContext(pIC->contextIndex);
+					Log.write("[IOCP]:in workthread, post accept failed.");
+				}
 			}
 			else {
-				//send close connection signal
 				Log.write("[IOCP]:in IOCPWorkThreead, release socket context.");
 				pIOCPModule->postCloseConnection(pSC);
 			}
+			
 			continue;
 		}
-
-		IOCPContext * pIC = CONTAINING_RECORD(pOverlapped, IOCPContext, overlapped);
-		Log.write("[IOCP]:threadID %d io request %d bytes", threadID, dwBytesTransfered);
+		
 		pSC->timer.start();
 
 		//process data
@@ -545,6 +643,9 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 					Log.write("[IOCP]:in IOCPWorkThreead, postaccept error.");
 					//post accept failed, release IOCPContext
 					pIOCPModule->listenSocketContext.removeIOCPContext(pIC->contextIndex);
+				}
+				else {
+					pIOCPModule->connectNum++;
 				}
 				break;
 			case SIG_RECV:
@@ -561,12 +662,14 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 				break;
 			case SIG_CLOSE_CONNECTION:
 				pIOCPModule->doCloseConnection(pIOCPModule, pSC);
+				pIOCPModule->normallyClosedNum++;
 				break;
 			case SIG_NULL:
 				Log.write("[IOCP]:threadID %d SIG_NULL.", threadID);
 				break;
 			case SIG_EXIT:
 				Log.write("[IOCP]:exit signal received.\n");
+				delete pSC;
 				exitFlag = true;
 				break;
 			default:
@@ -578,6 +681,9 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 		else {
 			if (SIG_ACCEPT == pIC->operation) {
 				Log.write("[IOCP]:in workthread, close empty connection");
+				closesocket(pIC->socket);
+				pIOCPModule->connectNum++;
+				pIOCPModule->normallyClosedNum++;
 				if (!pIOCPModule->postAccept(pIC)) {
 					//post accept failed, release IOCPContext
 					pIOCPModule->listenSocketContext.removeIOCPContext(pIC->contextIndex);
@@ -598,6 +704,6 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 		pSC = NULL;
 		pIC = NULL;
 	}
-	Log.write("[IOCP]: in work thread return success");
+	Log.write("[IOCP]: in work thread %d return success", threadID);
 }
 

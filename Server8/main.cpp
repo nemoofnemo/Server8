@@ -5,12 +5,6 @@ using namespace svrutil;
 
 int main(void){
 	IOCPModule m;
-	m.initIOCP();
-
-	while (true)
-	{
-		Sleep(500);
-	}
-
+	m.run();
 	return 0;
 }

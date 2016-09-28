@@ -12,6 +12,7 @@
 #include <Winsock2.h>
 #include <Windows.h>
 #include <mswsock.h>
+#include <WS2tcpip.h>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>

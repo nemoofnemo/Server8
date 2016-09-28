@@ -923,6 +923,7 @@ private:
 	int									port;
 	svrutil::SRWLock					lock;
 	svrutil::ThreadPool					IOCPThreadPool;
+	svr::Status							status;
 
 	//AcceptEx µÄº¯ÊýÖ¸Õë
 	LPFN_ACCEPTEX					lpfnAcceptEx;
@@ -936,6 +937,11 @@ private:
 	int connectionLiveTime;
 	int acceptTimeout;
 	int daemonThreadWakeInternal;
+
+	int connectNum;
+	int normallyClosedNum;
+	int errorNum;
+	int callbackInvokedNum;
 
 	//callback: initialized in constructor, set in setCallback()
 
@@ -1014,11 +1020,17 @@ public:
 		pRecvCallback(NULL),
 		pSendCallback(NULL)
 	{
-		maxThreadNum = 1;					//thread pool count
-		maxStandbySocket = 1;					//socket pool count
+		maxThreadNum = 8;					//thread pool count
+		maxStandbySocket = 16;					//socket pool count
 		connectionLiveTime = 1200000;		//default 20min
 		acceptTimeout = 5000;				//5s
 		daemonThreadWakeInternal = 5000;	//5s
+		status = Status::STATUS_READY;
+
+		connectNum = 0;
+		normallyClosedNum = 0;
+		errorNum = 0;
+		callbackInvokedNum = 0;
 	}
 
 	IOCPModule(int bufSize, int port) : 
@@ -1032,6 +1044,12 @@ public:
 		connectionLiveTime = 1200000;		//default 20min
 		acceptTimeout = 5000;				//5s
 		daemonThreadWakeInternal = 5000;	//5s
+		status = Status::STATUS_READY;
+
+		connectNum = 0;
+		normallyClosedNum = 0;
+		errorNum = 0;
+		callbackInvokedNum = 0;
 	}
 
 	~IOCPModule() {

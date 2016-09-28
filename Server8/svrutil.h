@@ -221,12 +221,13 @@ public:
 //构造函数file的实参为"console"时,向控制台输出日志
 //否则写入指定文件,file为相对或绝对路径
 //错误代码501
-class svrutil::LogModule : public Object{
+class svrutil::LogModule : public Object {
 private:
 	static const int	 DEFAULT_BUFFER_SIZE = 0x2000;
 	static const int	 LOG_MODULE_ERROR = 501;
 
 	char *		buffer;
+	char *		tempBuffer;
 	int			index;
 	int			limit;
 	string		filePath;
@@ -252,7 +253,7 @@ public:
 
 	//构造函数file的实参为"console"时,向控制台输出日志
 	//否则写入指定文件,file为相对或绝对路径
-	LogModule(const string & file, const int & bufSize = DEFAULT_BUFFER_SIZE, const string & mode = string("a")) {
+	LogModule(const string & file, const int & bufSize = DEFAULT_BUFFER_SIZE, const string & mode = string("a+")) {
 		if (bufSize < 0) {
 			exit(LOG_MODULE_ERROR);
 		}
@@ -261,6 +262,7 @@ public:
 		index = 0;
 		limit = bufSize;
 		buffer = NULL;
+		tempBuffer = NULL;
 		//pFile = NULL;
 
 		if (file == "console") {
@@ -271,6 +273,7 @@ public:
 		}
 		else {
 			buffer = new char[limit];
+			tempBuffer = new char[limit];
 		}
 
 		if (!InitializeCriticalSectionAndSpinCount(&lock, 0x1000)) {
@@ -314,17 +317,35 @@ public:
 				num = ::vfprintf(pFile, format.c_str(), vl);
 			}
 			else {
-				if (index + len >= limit) {
-					flush();
-				}
 				EnterCriticalSection(&lock);
-				num = ::vsprintf_s(buffer + index, limit - index, format.c_str(), vl);
-				index += num;
+				num = ::vsprintf_s(tempBuffer, limit, format.c_str(), vl);
+
+				if (-1 == num) {
+					LeaveCriticalSection(&lock);
+					return -1;
+				}
+
+				if (index + num >= limit) {
+					::fwrite(buffer, index, 1, pFile);
+					index = 0;
+					::fwrite(tempBuffer, num, 1, pFile);
+					::fflush(pFile);
+				}
+				else {
+					if (!memcpy_s(buffer + index, limit - index, tempBuffer, num)) {
+						index += num;
+					}
+					else {
+						LeaveCriticalSection(&lock);
+						return -1;
+					}
+				}
+
 				LeaveCriticalSection(&lock);
 			}
 		}
-		va_end(vl);
 
+		va_end(vl);
 		return num;
 	}
 
@@ -545,7 +566,7 @@ private:
 	PTP_TIMER ptpTimer;
 	PTP_TIMER_CALLBACK ptpTimerCallBack;
 
-	/* 
+	/*
 	//this is a call back example from msdn.
 	VOID CALLBACK myCallback(
 		PTP_CALLBACK_INSTANCE Instance,
@@ -591,7 +612,7 @@ public:
 		SetThreadpoolCallbackCleanupGroup(&CallBackEnviron, pCleanupgroup, NULL);
 	}
 
-	~ThreadPool(){
+	~ThreadPool() {
 		CloseThreadpoolCleanupGroupMembers(pCleanupgroup, FALSE, NULL);
 		CloseThreadpoolCleanupGroup(pCleanupgroup);			// 关闭线程池清理组
 		DestroyThreadpoolEnvironment(&CallBackEnviron);		// 删除回调函数环境结构
@@ -602,7 +623,7 @@ public:
 		PTP_WORK prev = ptpWork;
 		bool ret = false;
 		ptpWork = CreateThreadpoolWork(pf, pv, &CallBackEnviron);
-		
+
 		if (NULL == ptpWork) {
 			ptpWork = prev;
 		}
