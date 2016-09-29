@@ -38,7 +38,8 @@ namespace svr {
 	enum ConstVar {
 		DEFAULT_QUEUE_SIZE = 0xAA,		//max size of event queue :	170 Events. 4080 bytes
 		DEFAULT_BUF_SIZ = 0x2000,		//default buffer size :			8192 bytes
-		DEFAULT_LISTEN_PORT = 6001		//server port. 6001
+		DEFAULT_LISTEN_PORT = 6001,		//server port. 6001
+		DEFAULT_CLUSTER_PORT = 6002	//cluster port 6002
 	};
 
 	enum Level {
@@ -1089,23 +1090,16 @@ public:
 
 		//common
 
-		string				instanceName;
+		string				instanceName;	//unique name
 		string				serverIP;
 		svr::ServerType		serverType;
 		int					port;
-		int					timeout;		//time in ms
-		int					sessionLiveTime;	//time in ms
 
 		//for controler
 
 		svr::Status			status;
 		int					responseTime;	//time in ms
 		int					score;
-
-		//connection
-
-		bool				isConnectionReady;
-		SOCKET			connectionSocket;
 
 	};
 
@@ -1118,6 +1112,12 @@ public:
 private:
 
 	//core
+
+	SOCKET listenSocket;
+	SOCKADDR_IN listenAddr;
+	int listenPort;
+	HANDLE listenThreadHandle;
+	svrutil::SRWLock socketLock;
 
 	std::map<string, void*>	kv_map;
 	svr::Session *			pServerSession;
@@ -1135,15 +1135,21 @@ private:
 
 	//deamon functions
 
-	void ControlerDeamonFunction(void);
+	void ControlerDaemonFunction(void);
 
-	void ProcessorDeamonFunction(void);
+	void ProcessorDaemonFunction(void);
 
 	//work thread
 
 	static void __stdcall ControlerWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 
 	static void __stdcall ProcessorWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
+
+	//socket
+
+	bool doRecv();
+
+	static unsigned __stdcall listenThread(void * arg);
 
 	//not available
 
@@ -1167,10 +1173,13 @@ public:
 		int queueSize = svr::ConstVar::DEFAULT_QUEUE_SIZE) : 
 		instanceInfo(info)
 	{
+		listenThreadHandle = INVALID_HANDLE_VALUE;
+		ZeroMemory(&listenAddr, sizeof(SOCKADDR_IN));
+
 		bufferSize = bufSize;
 		eventQueueSize = queueSize;
 		pServerSession = new Session("server", 682);	//16kb
-		
+		listenPort = instanceInfo.port;
 		//set thread pool
 
 	}
@@ -1180,6 +1189,31 @@ public:
 	}
 
 	//operation
+
+	bool LoadSocketLib(void) {
+		{
+			WSADATA wsaData;
+			if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+				Log.write("[IOCP]:cannot start wsa .");
+				return false;
+			}
+
+			if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2) {
+				WSACleanup();
+				Log.write("[IOCP]:cannot start wsa .");
+				return false;
+			}
+			return true;
+		}
+	}
+
+	void UnloadSocketLib(void) {
+		WSACleanup();
+	}
+
+	bool init(void);
+
+	void startMainLoop(void);
 
 	int run(void);
 

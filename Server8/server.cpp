@@ -6,6 +6,8 @@ LogModule Log("console");
 LogModule Log("./server.log");
 #endif
 
+//IOCPModule
+
 bool svr::IOCPModule::GetFunctionAddress(void){
 	GUID guid = WSAID_ACCEPTEX;        // GUID，这个是识别AcceptEx函数必须的
 	DWORD dwBytes = 0;
@@ -52,6 +54,11 @@ bool svr::IOCPModule::initIOCP(void){
 	listenSocketContext.addr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
 	listenSocketContext.addr.sin_family = AF_INET;
 	listenSocketContext.addr.sin_port = htons(port);
+
+	if (listenSocketContext.socket == INVALID_SOCKET) {
+		Log.write("[IOCP]:in initIOCP cannot creat listen socket.");
+		return false;
+	}
 	
 	//create iocp
 	hIOCP = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
@@ -73,27 +80,27 @@ bool svr::IOCPModule::initIOCP(void){
 	}
 
 	if (bind(listenSocketContext.socket, (SOCKADDR*)&listenSocketContext.addr, sizeof(SOCKADDR)) == SOCKET_ERROR) {
-		Log.write("[server]:bind error.");
+		Log.write("[IOCP]:bind error.");
 		return false;
 	}
 	else {
-		Log.write("[server]:bind success.");
+		Log.write("[IOCP]:bind success.");
 	}
 
 	if (listen(listenSocketContext.socket, SOMAXCONN) == SOCKET_ERROR) {
-		Log.write("[server]:listen error.");
+		Log.write("[IOCP]:listen error.");
 		return false;
 	}
 	else {
-		Log.write("[server]:listen success.");
+		Log.write("[IOCP]:listen success.");
 	}
 
 	if (GetFunctionAddress() == false) {
-		Log.write("[server]:get function address failed.");
+		Log.write("[IOCP]:get function address failed.");
 		return false;
 	}
 	else {
-		Log.write("[server]:get function address success.");
+		Log.write("[IOCP]:get function address success.");
 	}
 
 	//iocp thread pool
@@ -135,11 +142,11 @@ void svr::IOCPModule::run(void){
 	if (initIOCP()) {
 		Log.write("[IOCP]: in run(), daemon thread start.");
 		while (status != Status::STATUS_HALT) {
-			//1.socket pool
+			//todo: 1.socket pool
 
-			//2.time to live
+			//todo: 2.time to live
 
-			Log.write("[IOCPDaemon]:callback=%d connect=%d closed=%d error=%d.", callbackInvokedNum, connectNum, normallyClosedNum, errorNum);
+			Log.write("[IOCPDaemon]:callback=%d total=%d alive=%d closed=%d error=%d.", callbackInvokedNum, connectNum, socketContextMap.size(), normallyClosedNum, errorNum);
 			Sleep(daemonThreadWakeInternal);
 		}
 		Log.write("[IOCP]: in run(), daemon thread stop.");
@@ -552,12 +559,19 @@ bool svr::IOCPModule::doSend(SocketContext * pSC, IOCPContext * pIC, int dataLen
 }
 
 void svr::IOCPModule::postCloseConnection(SocketContext * pSC){
-	if ( pSC && !pSC->closeFlag) {
+	if (!pSC) {
+		return;
+	}
+
+	pSC->socketLock.AcquireExclusive();
+	if (!pSC->closeFlag) {
+		pSC->closeFlag = true;
 		IOCPContext * pCloseContext = pSC->createIOCPContext(4096);
 		pCloseContext->operation = SIG_CLOSE_CONNECTION;
-		PostQueuedCompletionStatus(hIOCP, 1, (ULONG_PTR)pSC, &pCloseContext->overlapped);
-		pSC->closeFlag = true;
+		PostQueuedCompletionStatus(hIOCP, 1, (ULONG_PTR)pSC, &pCloseContext->overlapped);		
 	}
+	pSC->socketLock.ReleaseExclusive();
+
 }
 
 void svr::IOCPModule::doCloseConnection(IOCPModule * pIOCPModule, SocketContext * pSC){
@@ -633,6 +647,7 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 			continue;
 		}
 		
+		//set timer
 		pSC->timer.start();
 
 		//process data
@@ -674,7 +689,6 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 				break;
 			default:
 				Log.write("[IOCP]:invalid signal received.thread exit unnormally\n");
-				exitFlag = true;
 				break;
 			}
 		}
@@ -695,7 +709,7 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 				pIOCPModule->postCloseConnection(pSC);
 			}
 			else {
-				Log.write("[IOCP]:in workthread, 0 bytes received");
+				Log.write("[IOCP]:in workthread, 0 bytes received, unknown error");
 			}
 		}
 
@@ -707,3 +721,77 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 	Log.write("[IOCP]: in work thread %d return success", threadID);
 }
 
+//server
+
+unsigned svr::Server::listenThread(void * arg){
+	Server * pServer = (Server*)arg;
+	SOCKET clientSocket = INVALID_SOCKET;
+	SOCKADDR_IN clientAddr;
+	int addrLen = sizeof(SOCKADDR_IN);
+	const int bufferLength = 0x100000;
+	char * buffer = new char[bufferLength];
+
+	while (pServer->instanceInfo.status != Status::STATUS_HALT) {
+		Log.write("[Server]:listenThread, wait connection.");
+		clientSocket = accept(pServer->listenSocket, (sockaddr*)&clientAddr, &addrLen);
+
+		if (clientSocket == INVALID_SOCKET) {
+			Log.write("[Server]:listenThread, accept invalid socket");
+			continue;
+		}
+		Log.write("[Server]:listenThread, new connection.");
+
+		int count = 0;
+		while ((count = recv(clientSocket, buffer, 0x100000 - 1, 0)) > 0) {
+			buffer[count] = '\0';
+			puts(buffer);
+		}
+
+		Log.write("[Server]:listenThread, connection closed");
+		closesocket(clientSocket);
+	}
+
+	delete[] buffer;
+
+	return 0;
+}
+
+bool svr::Server::init(void){
+	LoadSocketLib();
+	
+	listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (INVALID_SOCKET == listenSocket) {
+		Log.write("[Server]:in init, cannot create listen socket.");
+		return false;
+	}
+
+	listenAddr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
+	listenAddr.sin_family = AF_INET;
+	listenAddr.sin_port = htons(listenPort);
+
+	if (bind(listenSocket, (SOCKADDR*)&listenAddr, sizeof(SOCKADDR)) == SOCKET_ERROR) {
+		Log.write("[server]:bind error.");
+		return false;
+	}
+	else {
+		Log.write("[server]:bind success.");
+	}
+
+	if (listen(listenSocket, SOMAXCONN) == SOCKET_ERROR) {
+		Log.write("[server]:listen error.");
+		return false;
+	}
+	else {
+		Log.write("[server]:listen success.");
+	}
+
+	listenThreadHandle = (HANDLE)_beginthreadex(NULL, 0, listenThread, this, 0, NULL);
+	return false;
+}
+
+int svr::Server::run(void){
+	while (true) {
+		Sleep(10000);
+	}
+	return 0;
+}
