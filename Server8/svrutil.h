@@ -351,7 +351,7 @@ public:
 
 	//提交缓冲区内容到物理存储器
 	void flush(void) {
-		if (filePath != "console") {
+		if (filePath != "console" && index > 0) {
 			EnterCriticalSection(&lock);
 			::fwrite(buffer, index, 1, pFile);
 			::fflush(pFile);

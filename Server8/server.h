@@ -1066,13 +1066,17 @@ public:
 	bool setRecvCallback(IOCPCallback * pIOCPCallback) {
 		if (pIOCPCallback) {
 			this->pRecvCallback = pIOCPCallback;
+			return true;
 		}
+		return false;
 	}
 
 	bool setSendCallback(IOCPCallback * pIOCPCalback) {
 		if (pIOCPCalback) {
 			this->pSendCallback = pIOCPCalback;
+			return true;
 		}
+		return false;
 	}
 
 	bool sendData(SOCKET s, const char * data, int length);
@@ -1110,21 +1114,34 @@ public:
 	map<string, ServerInfo> childNodeInfoMap;
 
 private:
+	
+	//iocp callback
+
+	class RecvCallback : public IOCPModule::IOCPCallback {
+	public:
+		Server * pServer;
+		int run(IOCPModule::SocketContext* pSC, const char * data, int length);
+	};
+
+	class SendCallback : public IOCPModule::IOCPCallback {
+	public:
+		Server * pServer;
+		int run(IOCPModule::SocketContext* pSC, const char * data, int length);
+	};
+
+	RecvCallback recvCallback;
+	SendCallback sendCallback;
 
 	//core
-
-	SOCKET listenSocket;
-	SOCKADDR_IN listenAddr;
-	int listenPort;
-	HANDLE listenThreadHandle;
-	svrutil::SRWLock socketLock;
 
 	std::map<string, void*>	kv_map;
 	svr::Session *			pServerSession;
 	svr::SessionManager		sessionManager;
-	svrutil::ThreadPool		workThreadPool;
+	svr::IOCPModule *		pIOCPModule;
+	svrutil::ThreadPool		threadPool;
 	svrutil::SRWLock		lock;
 
+	int						daemonThreadWakeInternal;
 	int						eventQueueSize;
 	int						bufferSize;
 
@@ -1145,11 +1162,7 @@ private:
 
 	static void __stdcall ProcessorWorkCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 
-	//socket
-
-	bool doRecv();
-
-	static unsigned __stdcall listenThread(void * arg);
+	static void __stdcall DaemonThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_TIMER Timer);
 
 	//not available
 
@@ -1173,13 +1186,11 @@ public:
 		int queueSize = svr::ConstVar::DEFAULT_QUEUE_SIZE) : 
 		instanceInfo(info)
 	{
-		listenThreadHandle = INVALID_HANDLE_VALUE;
-		ZeroMemory(&listenAddr, sizeof(SOCKADDR_IN));
-
 		bufferSize = bufSize;
 		eventQueueSize = queueSize;
 		pServerSession = new Session("server", 682);	//16kb
-		listenPort = instanceInfo.port;
+		pIOCPModule = new IOCPModule(bufferSize, instanceInfo.port);
+		daemonThreadWakeInternal = 5000;
 		//set thread pool
 
 	}
@@ -1212,8 +1223,6 @@ public:
 	}
 
 	bool init(void);
-
-	void startMainLoop(void);
 
 	int run(void);
 

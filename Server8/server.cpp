@@ -50,13 +50,14 @@ bool svr::IOCPModule::initIOCP(void){
 
 	//initialize socket library
 	LoadSocketLib();
+
 	listenSocketContext.socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 	listenSocketContext.addr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
 	listenSocketContext.addr.sin_family = AF_INET;
 	listenSocketContext.addr.sin_port = htons(port);
 
 	if (listenSocketContext.socket == INVALID_SOCKET) {
-		Log.write("[IOCP]:in initIOCP cannot creat listen socket.");
+		Log.write("[IOCP]:in initIOCP cannot create listen socket.");
 		return false;
 	}
 	
@@ -147,6 +148,8 @@ void svr::IOCPModule::run(void){
 			//todo: 2.time to live
 
 			Log.write("[IOCPDaemon]:callback=%d total=%d alive=%d closed=%d error=%d.", callbackInvokedNum, connectNum, socketContextMap.size(), normallyClosedNum, errorNum);
+			Log.flush();
+
 			Sleep(daemonThreadWakeInternal);
 		}
 		Log.write("[IOCP]: in run(), daemon thread stop.");
@@ -162,7 +165,6 @@ bool svr::IOCPModule::stopIOCP(void){
 
 	status = Status::STATUS_HALT;
 	closesocket(listenSocketContext.socket);
-	
 	for (int i = 0; i < maxThreadNum; ++i) {
 		SocketContext * pSC = new SocketContext;
 		IOCPContext *pIC = pSC->createIOCPContext();
@@ -563,14 +565,17 @@ void svr::IOCPModule::postCloseConnection(SocketContext * pSC){
 		return;
 	}
 
-	pSC->socketLock.AcquireExclusive();
+	lock.AcquireExclusive();
 	if (!pSC->closeFlag) {
 		pSC->closeFlag = true;
 		IOCPContext * pCloseContext = pSC->createIOCPContext(4096);
 		pCloseContext->operation = SIG_CLOSE_CONNECTION;
 		PostQueuedCompletionStatus(hIOCP, 1, (ULONG_PTR)pSC, &pCloseContext->overlapped);		
 	}
-	pSC->socketLock.ReleaseExclusive();
+	else {
+		Log.write("[IOCP]:in postCloseConnection , ignore signal.");
+	}
+	lock.ReleaseExclusive();
 
 }
 
@@ -723,75 +728,42 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 
 //server
 
-unsigned svr::Server::listenThread(void * arg){
-	Server * pServer = (Server*)arg;
-	SOCKET clientSocket = INVALID_SOCKET;
-	SOCKADDR_IN clientAddr;
-	int addrLen = sizeof(SOCKADDR_IN);
-	const int bufferLength = 0x100000;
-	char * buffer = new char[bufferLength];
-
-	while (pServer->instanceInfo.status != Status::STATUS_HALT) {
-		Log.write("[Server]:listenThread, wait connection.");
-		clientSocket = accept(pServer->listenSocket, (sockaddr*)&clientAddr, &addrLen);
-
-		if (clientSocket == INVALID_SOCKET) {
-			Log.write("[Server]:listenThread, accept invalid socket");
-			continue;
-		}
-		Log.write("[Server]:listenThread, new connection.");
-
-		int count = 0;
-		while ((count = recv(clientSocket, buffer, 0x100000 - 1, 0)) > 0) {
-			buffer[count] = '\0';
-			puts(buffer);
-		}
-
-		Log.write("[Server]:listenThread, connection closed");
-		closesocket(clientSocket);
-	}
-
-	delete[] buffer;
-
-	return 0;
+void svr::Server::DaemonThread(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_TIMER Timer){
+	Log.write("[ServerDaemonThread]:called");
 }
 
 bool svr::Server::init(void){
-	LoadSocketLib();
+	//set timer
+	FILETIME FileDueTime;
+	ULARGE_INTEGER ulDueTime;
+	ulDueTime.QuadPart = (ULONGLONG)-(70000000);
+	FileDueTime.dwHighDateTime = ulDueTime.HighPart;
+	FileDueTime.dwLowDateTime = ulDueTime.LowPart;
+	threadPool.createTimerThread(DaemonThread);
+	threadPool.setTimer(&FileDueTime,7000, 100);
+	Log.write("[Server]:timer created success.");
 	
-	listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (INVALID_SOCKET == listenSocket) {
-		Log.write("[Server]:in init, cannot create listen socket.");
-		return false;
-	}
+	//init callback
+	recvCallback.pServer = this;
+	sendCallback.pServer = this;
+	pIOCPModule->setRecvCallback(&recvCallback);
+	pIOCPModule->setSendCallback(&sendCallback);
+	Log.write("[Server]:set callback success");
 
-	listenAddr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
-	listenAddr.sin_family = AF_INET;
-	listenAddr.sin_port = htons(listenPort);
-
-	if (bind(listenSocket, (SOCKADDR*)&listenAddr, sizeof(SOCKADDR)) == SOCKET_ERROR) {
-		Log.write("[server]:bind error.");
-		return false;
-	}
-	else {
-		Log.write("[server]:bind success.");
-	}
-
-	if (listen(listenSocket, SOMAXCONN) == SOCKET_ERROR) {
-		Log.write("[server]:listen error.");
-		return false;
-	}
-	else {
-		Log.write("[server]:listen success.");
-	}
-
-	listenThreadHandle = (HANDLE)_beginthreadex(NULL, 0, listenThread, this, 0, NULL);
-	return false;
+	return true;
 }
 
 int svr::Server::run(void){
-	while (true) {
-		Sleep(10000);
-	}
+	pIOCPModule->run();
+	return 0;
+}
+
+int svr::Server::RecvCallback::run(IOCPModule::SocketContext * pSC, const char * data, int length){
+	Log.write("[Server]:run recvCallback");
+	return 0;
+}
+
+int svr::Server::SendCallback::run(IOCPModule::SocketContext * pSC, const char * data, int length){
+	Log.write("[Server]:run sendCallback, send success");
 	return 0;
 }
