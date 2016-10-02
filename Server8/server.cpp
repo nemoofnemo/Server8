@@ -188,9 +188,31 @@ bool svr::IOCPModule::stopIOCP(void){
 	return true;
 }
 
-bool svr::IOCPModule::sendData(SOCKET s, const char * data, int length)
-{
-	return false;
+svr::IOCPModule::SocketContext * svr::IOCPModule::createConnectContext(const string & ip, int port){
+	SocketContext * pSC = new SocketContext;
+
+	pSC->addr.sin_addr.s_addr = inet_addr(ip.c_str());
+	pSC->addr.sin_family = AF_INET;
+	pSC->addr.sin_port = htons(port);
+	pSC->socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
+
+	if (pSC->socket == INVALID_SOCKET) {
+		Log.write("[IOCP]:in createConnectContext,cannot create socket");
+		delete pSC;
+		return NULL;
+	}
+
+	if (!connect(pSC->socket, (sockaddr*)&pSC->addr, sizeof(sockaddr))) {
+		pSC->timer.start();
+	}
+	else {
+		Log.write("[IOCP]:in createConnectContext,error");
+		delete pSC;
+		return NULL;
+	}
+
+	Log.write("[IOCP]:in createConnectContext,success");
+	return pSC;
 }
 
 bool svr::IOCPModule::sendData(SocketContext * pSC, const char * data, int length){
@@ -215,6 +237,11 @@ bool svr::IOCPModule::sendData(SocketContext * pSC, const char * data, int lengt
 
 	IOCPContext * pContext = NULL;
 	if (flag == true) {//todo:need test
+		if (!CreateIoCompletionPort((HANDLE)pSC->socket, hIOCP, (ULONG_PTR)pSC, 0)) {
+			Log.write("[IOCP]:in senddata,bind iocp failed.");
+			return false;
+		}
+
 		pContext = pSC->createIOCPContext(bufferSize);
 		pContext->socket = pSC->socket;
 		memcpy(&pContext->addr, &pSC->addr, sizeof(SOCKADDR_IN));
@@ -566,14 +593,18 @@ void svr::IOCPModule::postCloseConnection(SocketContext * pSC){
 	}
 
 	lock.AcquireExclusive();
-	if (!pSC->closeFlag) {
+	std::map<SocketContext*, SOCKET>::iterator it = socketContextMap.find(pSC);
+	if (it == socketContextMap.end()) {
+		Log.write("[IOCP]:in postCloseConnection , ignore signal code 1.");
+	}
+	else if (!pSC->closeFlag) {
 		pSC->closeFlag = true;
 		IOCPContext * pCloseContext = pSC->createIOCPContext(4096);
 		pCloseContext->operation = SIG_CLOSE_CONNECTION;
 		PostQueuedCompletionStatus(hIOCP, 1, (ULONG_PTR)pSC, &pCloseContext->overlapped);		
 	}
 	else {
-		Log.write("[IOCP]:in postCloseConnection , ignore signal.");
+		Log.write("[IOCP]:in postCloseConnection , ignore signal code 2.");
 	}
 	lock.ReleaseExclusive();
 
@@ -619,7 +650,8 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 		if (!flag) {
 			pIOCPModule->errorNum++;
 
-			Log.write("[IOCP]:in IOCPWorkThread, threadID %d, IOCP queue error, code = %d.", threadID, GetLastError());
+			int errorNum = GetLastError();
+			Log.write("[IOCP]:in IOCPWorkThread, threadID %d, IOCP queue error, code = %d.", threadID, errorNum);
 			
 			if (!pSC) {
 				Log.write("[IOCP]:in IOCPWorkThreead, pSocketContext null.");
@@ -643,6 +675,19 @@ void svr::IOCPModule::IOCPWorkThread(PTP_CALLBACK_INSTANCE Instance, PVOID Param
 					pIOCPModule->listenSocketContext.removeIOCPContext(pIC->contextIndex);
 					Log.write("[IOCP]:in workthread, post accept failed.");
 				}
+			}
+			else if(SIG_SEND == pIC->operation) {
+				Log.write("[IOCP]:in IOCPWorkThreead, send error.");
+				if (pIOCPModule->pSendCallback) {
+					pIOCPModule->pSendCallback->run(pSC, NULL, dwBytesTransfered);
+				}
+				else {
+					pIOCPModule->pSendCallback = new IOCPCallback();
+					pIOCPModule->pSendCallback->run(pSC, NULL, dwBytesTransfered);
+					delete pIOCPModule->pSendCallback;
+					pIOCPModule->pSendCallback = NULL;
+				}
+				pIOCPModule->postCloseConnection(pSC);
 			}
 			else {
 				Log.write("[IOCP]:in IOCPWorkThreead, release socket context.");
@@ -739,7 +784,7 @@ bool svr::Server::init(void){
 	ulDueTime.QuadPart = (ULONGLONG)-(70000000);
 	FileDueTime.dwHighDateTime = ulDueTime.HighPart;
 	FileDueTime.dwLowDateTime = ulDueTime.LowPart;
-	threadPool.createTimerThread(DaemonThread);
+	threadPool.createTimerThread(DaemonThread, this);
 	threadPool.setTimer(&FileDueTime,7000, 100);
 	Log.write("[Server]:timer created success.");
 	

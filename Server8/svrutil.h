@@ -26,6 +26,9 @@ namespace svrutil {
 	class MD5;
 	class SystemInfo;
 	class TimeStamp;
+	
+	template<typename type>
+	class EventDispatcher;
 };
 
 //¶¨Ê±Æ÷
@@ -638,10 +641,10 @@ public:
 		SubmitThreadpoolWork(ptpWork);
 	}
 
-	bool createWaitThread(PTP_WAIT_CALLBACK pf) {
+	bool createWaitThread(PTP_WAIT_CALLBACK pf, PVOID pv) {
 		PTP_WAIT prev = ptpWait;
 		bool ret = false;
-		ptpWait = CreateThreadpoolWait(pf, NULL, &CallBackEnviron);
+		ptpWait = CreateThreadpoolWait(pf, pv, &CallBackEnviron);
 
 		if (NULL == ptpWait) {
 			ptpWait = prev;
@@ -657,10 +660,10 @@ public:
 		SetThreadpoolWait(ptpWait, h, pf);
 	}
 
-	bool createTimerThread(PTP_TIMER_CALLBACK pf) {
+	bool createTimerThread(PTP_TIMER_CALLBACK pf, PVOID pv) {
 		PTP_TIMER prev = ptpTimer;
 		bool ret = false;
-		ptpTimer = CreateThreadpoolTimer(pf, NULL, &CallBackEnviron);
+		ptpTimer = CreateThreadpoolTimer(pf, pv, &CallBackEnviron);
 
 		if (NULL == ptpTimer) {
 			ptpTimer = prev;
@@ -757,6 +760,15 @@ public:
 
 		return string(timeStamp);
 	}
+};
+
+//dispatcher template
+template<typename type>
+class svrutil::EventDispatcher {
+private:
+	
+	std::map<std::string, type> eventMap;
+	svrutil::SRWLock lock;
 };
 
 #endif // !SVRUTIL

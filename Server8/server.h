@@ -986,8 +986,6 @@ private:
 
 	bool doSend(SocketContext * pSC, IOCPContext * pIC, int dataLength);
 
-	void postCloseConnection(SocketContext * pSC);
-
 	void doCloseConnection(IOCPModule * pIOCPModule, SocketContext * pSC);
 
 	bool isValidOperation(IOCPOperationSignal t) {
@@ -1079,7 +1077,9 @@ public:
 		return false;
 	}
 
-	bool sendData(SOCKET s, const char * data, int length);
+	SocketContext * createConnectContext(const string & ip, int port);
+
+	void postCloseConnection(SocketContext * pSC);
 
 	bool sendData(SocketContext * pSC, const char * data, int length);
 };

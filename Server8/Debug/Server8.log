@@ -2,5 +2,12 @@
 d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(46): warning C4244: “=”: 从“LONGLONG”转换到“double”，可能丢失数据
 d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(92): warning C4244: “参数”: 从“const unsigned __int64”转换到“DWORD”，可能丢失数据
 d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(738): warning C4244: “初始化”: 从“unsigned __int64”转换到“int”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\server.cpp(194): warning C4996: 'inet_addr': Use inet_pton() or InetPton() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+  c:\program files (x86)\windows kits\8.1\include\um\winsock2.h(1850): note: 参见“inet_addr”的声明
+  main.cpp
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(46): warning C4244: “=”: 从“LONGLONG”转换到“double”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(92): warning C4244: “参数”: 从“const unsigned __int64”转换到“DWORD”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(738): warning C4244: “初始化”: 从“unsigned __int64”转换到“int”，可能丢失数据
+  正在生成代码...
   Server8.vcxproj -> D:\Documents\Visual Studio 2015\Projects\Server8\Debug\Server8.exe
   Server8.vcxproj -> D:\Documents\Visual Studio 2015\Projects\Server8\Debug\Server8.pdb (Full PDB)
