@@ -763,12 +763,160 @@ public:
 };
 
 //dispatcher template
-template<typename type>
+template<typename ArgType>
 class svrutil::EventDispatcher {
+public:
+	const int DEFAULT_MAXTHREAD_NUM = 16;
+
+	template<typename _ArgType>
+	class Callback {
+	private:
+		void operator=(const Callback& cb) {
+			//...
+		}
+
+		Callback(const Callback & cb) {
+			//....
+		}
+
+	public:
+		Callback() {
+			//...
+		}
+
+		virtual ~Callback() {
+
+		}
+
+		virtual void run(_ArgType * pArg) {
+			
+		}
+	};
+
 private:
-	
-	std::map<std::string, type> eventMap;
+	int maxThreadNum;
+	int sleepTime;
+	bool exitFlag;
+
+	std::list<std::pair<HANDLE, void*>> threadList;
+	std::list<std::pair<std::string, ArgType*>> eventList;
+	std::map<std::string, Callback<ArgType>*> callbackMap;
 	svrutil::SRWLock lock;
+
+	static unsigned int __stdcall workThread(void * pArg) {
+		EventDispatcher * pDispatcher = (EventDispatcher*)pArg;
+		string name;
+		ArgType * pArgType = NULL;
+		std::map<std::string, Callback<ArgType>*>::iterator it;
+
+		while (!pDispatcher->exitFlag) {
+			//get event
+			pDispatcher->lock.AcquireExclusive();
+			if (pDispatcher->eventList.size() > 0) {
+				name = pDispatcher->eventList.front().first;
+				pArgType = pDispatcher->eventList.front().second;
+				pDispatcher->eventList.pop_front();
+			}
+			else {
+				pDispatcher->lock.ReleaseExclusive();
+				Sleep(pDispatcher->sleepTime);
+				continue;
+			}
+			pDispatcher->lock.ReleaseExclusive();
+
+			//process event
+			pDispatcher->lock.AcquireShared();
+			it = pDispatcher->callbackMap.find(name);
+			if (it != pDispatcher->callbackMap.end()) {
+				it->second->run(pArgType);
+			}
+			pDispatcher->lock.ReleaseShared();
+		}
+
+		return 0;
+	}
+
+	//not available
+
+	void operator=(const EventDispatcher & ED) {
+		//...
+	}
+
+	EventDispatcher() {
+
+	}
+
+	EventDispatcher(const EventDispatcher & ED) {
+
+	}
+	
+public:
+	EventDispatcher(int max = DEFAULT_MAXTHREAD_NUM) {
+		if (max < 1) {
+			max = 1;
+		}
+
+		maxThreadNum = max;
+		sleepTime = 1000;
+		exitFlag = false;
+
+		for (int i = 0; i < maxThreadNum; ++i) {
+			HANDLE h = (HANDLE)_beginthreadex(NULL, 0, workThread, this, 0, 0);
+			threadList.push_back(std::pair<HANDLE, SRWLock*>(h, NULL));
+		}
+
+		Sleep(200);
+	}
+
+	virtual ~EventDispatcher() {
+		exitFlag = true;
+		std::list<std::pair<HANDLE, void*>>::iterator it = threadList.begin();
+		while (it != threadList.end()) {
+			CloseHandle(it->first);
+			++it;
+		}
+		Sleep(200);
+	}
+
+	bool addCallback(const std::string & name, Callback<ArgType> * pCallback) {
+		if (name.size() == 0 || pCallback == NULL) {
+			return false;
+		}
+
+		lock.AcquireExclusive();
+		std::map<std::string, Callback<ArgType>*>::iterator it = callbackMap.find(name);
+		if (it == callbackMap.end()) {
+			callbackMap.insert(std::pair<string, Callback<ArgType>*>(name, pCallback));
+		}
+		lock.ReleaseExclusive();
+
+		return true;
+	}
+
+	bool removeCallback(const std::string & name) {
+		if (name.size() == 0) {
+			return false;
+		}
+
+		lock.AcquireExclusive();
+		std::map<std::string, Callback<ArgType>*>::iterator it = callbackMap.find(name);
+		if (it != callbackMap.end()) {
+			callbackMap.erase(it);
+		}
+		lock.ReleaseExclusive();
+
+		return true;
+	}
+
+	bool submitEvent(const std::string & name,ArgType * pArg) {
+		lock.AcquireExclusive();
+		std::map<std::string, Callback<ArgType>*>::iterator it = callbackMap.find(name);
+		if (it != callbackMap.end()) {
+			eventList.push_back(std::pair<std::string, ArgType*>(name, pArg));
+		}
+		lock.ReleaseExclusive();
+		return true;
+	}
 };
 
 #endif // !SVRUTIL
