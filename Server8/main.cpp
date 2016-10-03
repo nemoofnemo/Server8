@@ -10,7 +10,8 @@ public:
 	}
 
 	void run(string * pstr) {
-		std::cout << "okkkkk" << std::endl;
+		std::cout << "okkkkk" <<  GetCurrentThreadId() << std::endl;
+		Sleep(10);
 	}
 };
 
@@ -25,11 +26,12 @@ int main(void){
 	svr.init();
 	svr.run();*/
 
-	EventDispatcher<std::string> ed(1);
+	EventDispatcher<std::string> ed(4);
 	CallbackEx cb;
 
 	ed.addCallback("test", &cb);
-	ed.submitEvent("test", NULL);
+	for(int i = 0 ; i < 200 ; ++i)
+		ed.submitEvent("test", NULL);
 
 	while (true) {
 		Sleep(10000);

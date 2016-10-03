@@ -767,6 +767,7 @@ template<typename ArgType>
 class svrutil::EventDispatcher {
 public:
 	const int DEFAULT_MAXTHREAD_NUM = 16;
+	const int DEFAULT_SLEEP_TIME = 233;
 
 	template<typename _ArgType>
 	class Callback {
@@ -808,6 +809,7 @@ private:
 		string name;
 		ArgType * pArgType = NULL;
 		std::map<std::string, Callback<ArgType>*>::iterator it;
+		bool runFlag = false;
 
 		while (!pDispatcher->exitFlag) {
 			//get event
@@ -828,9 +830,14 @@ private:
 			pDispatcher->lock.AcquireShared();
 			it = pDispatcher->callbackMap.find(name);
 			if (it != pDispatcher->callbackMap.end()) {
-				it->second->run(pArgType);
+				runFlag = true;
 			}
 			pDispatcher->lock.ReleaseShared();
+
+			if (runFlag) {
+				it->second->run(pArgType);
+				runFlag = false;
+			}
 		}
 
 		return 0;
@@ -857,7 +864,7 @@ public:
 		}
 
 		maxThreadNum = max;
-		sleepTime = 1000;
+		sleepTime = DEFAULT_SLEEP_TIME;
 		exitFlag = false;
 
 		for (int i = 0; i < maxThreadNum; ++i) {
