@@ -998,7 +998,7 @@ public:
 //Zlib
 class svrutil::Zlib {
 public:
-	int inf()
+	int inf();
 };
 
 #endif // !SVRUTIL
