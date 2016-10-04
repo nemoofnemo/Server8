@@ -26,6 +26,9 @@ namespace svrutil {
 	class MD5;
 	class SystemInfo;
 	class TimeStamp;
+	class SocketLibrary;
+	class GetHostByName;
+	class Zlib;
 	
 	template<typename type>
 	class EventDispatcher;
@@ -226,7 +229,7 @@ public:
 //´íÎó´úÂë501
 class svrutil::LogModule : public Object {
 private:
-	static const int	 DEFAULT_BUFFER_SIZE = 0x2000;
+	static const int	 DEFAULT_BUFFER_SIZE = 0x100000;
 	static const int	 LOG_MODULE_ERROR = 501;
 
 	char *		buffer;
@@ -762,6 +765,72 @@ public:
 	}
 };
 
+//load and unload socket library
+class svrutil::SocketLibrary {
+public:
+	static bool load(void) {
+		WSADATA wsaData;
+		if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+			return false;
+		}
+
+		if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2) {
+			WSACleanup();
+			return false;
+		}
+		return true;
+	}
+
+	static void unload(void) {
+		WSACleanup();
+	}
+};
+
+//get host ip address by hostname or domain(ipv4)
+class svrutil::GetHostByName {
+public:
+	static bool getIPList(const std::string & name, std::list<string> *pList) {
+		if (!pList) {
+			return false;
+		}
+
+		addrinfo hints;
+		addrinfo * pResult = NULL;
+		addrinfo * pAddr = NULL;
+		char str[16] = { 0 };	//16bytes for ipv4, 46bytes for ipv6
+		int ret = 0;
+
+		ZeroMemory(&hints, sizeof(addrinfo));
+		hints.ai_family = AF_INET;
+		hints.ai_socktype = SOCK_STREAM;
+
+		if ((ret = getaddrinfo(name.c_str(), NULL, &hints, &pResult)) != 0) {
+			return false;
+		}
+
+		for (pAddr = pResult; pAddr != NULL; pAddr = pAddr->ai_next) {
+			inet_ntop(AF_INET, &(((struct sockaddr_in *)(pAddr->ai_addr))->sin_addr), str, 16);
+			pList->push_back(string(str));
+		}
+
+		freeaddrinfo(pResult);
+		return true;
+	}
+
+	static std::string getFirstIP(const std::string & name) {
+		std::list<string> list;
+		GetHostByName::getIPList(name, &list);
+		
+		if (list.size()) {
+			return list.front();
+		}
+		else {
+			return std::string("");
+		}
+	}
+
+};
+
 //dispatcher template
 template<typename ArgType>
 class svrutil::EventDispatcher {
@@ -924,6 +993,12 @@ public:
 		lock.ReleaseExclusive();
 		return true;
 	}
+};
+
+//Zlib
+class svrutil::Zlib {
+public:
+	int inf()
 };
 
 #endif // !SVRUTIL

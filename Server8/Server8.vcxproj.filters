@@ -49,6 +49,9 @@
     <None Include="..\README.md">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="..\..\..\..\..\Windows\Desktop\zlib-1.2.3.tar.gz">
+      <Filter>资源文件</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="reverse.txt">
