@@ -27,6 +27,12 @@
 #pragma comment(lib, "ws2_32.lib") 
 #pragma comment(lib, "mswsock.lib") 
 
+//third part library
+#include "md5.h"
+#include "../zlib/include/zconf.h"
+#include "../zlib/include/zlib.h"
+#pragma comment(lib, "../zlib/lib/zlib.lib")
+
 //detect memory leak
 
 //#ifdef _DEBUG 

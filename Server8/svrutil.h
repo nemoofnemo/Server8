@@ -12,7 +12,6 @@
 #ifndef SVRUTIL
 #define SVRUTIL
 #include "svrlib.h"
-#include "md5.h"
 
 using std::string;
 
@@ -995,10 +994,66 @@ public:
 	}
 };
 
-//Zlib
+//Zlib:for gzip in http
 class svrutil::Zlib {
+private:
+	static HMODULE hModule;
+
 public:
-	int inf();
+	enum {SUCCESS,INVALID_STRING,ZLIB_ERROR};
+
+	//todo:need test
+	static bool loadZlib(const string & path) {
+		if (!hModule) {
+			hModule = LoadLibraryA(path.c_str());
+			return (!hModule) ? false : true;
+		}
+		return true;
+	}
+
+	//src : pointer to head of http response
+	static int inflateHTTPGzip(void * dest, unsigned long destLen, void * src, unsigned long srcLen) {
+		unsigned char * pDest = (unsigned char *)dest;
+		unsigned char * pStart = NULL;
+		unsigned char * ptr = (unsigned char *)src;
+		unsigned long size = 0ul;
+		
+		pStart = (unsigned char *)strstr((char*)src, "\r\n\r\n");
+		if (!pStart) {
+			return INVALID_STRING;
+		}
+		
+		pStart += 4;
+		if (sscanf_s((char*)pStart, "%x", &size) != 1) {
+			return INVALID_STRING;
+		}
+
+		pStart = (unsigned char *)strstr((char*)pStart, "\r\n");
+		if (!pStart) {
+			return INVALID_STRING;
+		}
+		pStart += 2;
+
+		z_stream strm;
+		strm.zalloc = Z_NULL;
+		strm.zfree = Z_NULL;
+		strm.opaque = Z_NULL;
+		strm.avail_in = size;
+		strm.next_in = pStart;
+		strm.avail_out = destLen;
+		strm.next_out = pDest;
+
+		if (inflateInit2(&strm, 47) != Z_OK){
+			return ZLIB_ERROR;
+		}
+
+		int ret = inflate(&strm, Z_NO_FLUSH);
+		if ( ret != 1) {
+			return ZLIB_ERROR;
+		}
+		
+		return SUCCESS;
+	}
 };
 
 #endif // !SVRUTIL
