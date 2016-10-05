@@ -28,6 +28,7 @@ namespace svrutil {
 	class SocketLibrary;
 	class GetHostByName;
 	class Zlib;
+	class RegexEx;
 	
 	template<typename type>
 	class EventDispatcher;
@@ -837,6 +838,8 @@ public:
 	const int DEFAULT_MAXTHREAD_NUM = 16;
 	const int DEFAULT_SLEEP_TIME = 233;
 
+	enum Status {RUNNING,SUSPEND,HALT};
+
 	template<typename _ArgType>
 	class Callback {
 	private:
@@ -865,7 +868,7 @@ public:
 private:
 	int maxThreadNum;
 	int sleepTime;
-	bool exitFlag;
+	Status status;
 
 	std::list<std::pair<HANDLE, void*>> threadList;
 	std::list<std::pair<std::string, ArgType*>> eventList;
@@ -879,7 +882,13 @@ private:
 		std::map<std::string, Callback<ArgType>*>::iterator it;
 		bool runFlag = false;
 
-		while (!pDispatcher->exitFlag) {
+		while (pDispatcher->status != HALT) {
+			//status
+			if (pDispatcher->status == SUSPEND) {
+				Sleep(1000);
+				continue;
+			}
+
 			//get event
 			pDispatcher->lock.AcquireExclusive();
 			if (pDispatcher->eventList.size() > 0) {
@@ -933,7 +942,7 @@ public:
 
 		maxThreadNum = max;
 		sleepTime = DEFAULT_SLEEP_TIME;
-		exitFlag = false;
+		status = RUNNING;
 
 		for (int i = 0; i < maxThreadNum; ++i) {
 			HANDLE h = (HANDLE)_beginthreadex(NULL, 0, workThread, this, 0, 0);
@@ -944,7 +953,7 @@ public:
 	}
 
 	virtual ~EventDispatcher() {
-		exitFlag = true;
+		status = HALT;
 		std::list<std::pair<HANDLE, void*>>::iterator it = threadList.begin();
 		while (it != threadList.end()) {
 			CloseHandle(it->first);
@@ -992,6 +1001,17 @@ public:
 		lock.ReleaseExclusive();
 		return true;
 	}
+
+	bool setStatus(Status st) {
+		if (st == RUNNING || st = SUSPEND) {
+			status = st;
+			return true;
+		}
+		else {
+			return false;
+		}
+	}
+
 };
 
 //Zlib:for gzip in http
@@ -1053,6 +1073,27 @@ public:
 		}
 		
 		return SUCCESS;
+	}
+};
+
+//regex
+class svrutil::RegexEx {
+public:
+	static bool getList(string & data, const std::string & pattern, std::list<string> * pList) {
+		if (!pList) {
+			return false;
+		}
+
+		std::regex _pattern(pattern);
+		std::regex_iterator<string::iterator> it(data.begin(), data.end(), _pattern);
+		std::regex_iterator<string::iterator> end;
+
+		while (it != end) {
+			pList->push_back(it->str());
+			++it;
+		}
+
+		return true;
 	}
 };
 
