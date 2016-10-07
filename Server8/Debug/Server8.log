@@ -1,9 +1,1 @@
-﻿  main.cpp
-d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(51): warning C4244: “=”: 从“LONGLONG”转换到“double”，可能丢失数据
-d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(97): warning C4244: “参数”: 从“const unsigned __int64”转换到“DWORD”，可能丢失数据
-d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(743): warning C4244: “初始化”: 从“unsigned __int64”转换到“int”，可能丢失数据
-  正在生成代码...
-  正在跳过...(未检测到相关更改)
-  svrlib.h
-  Server8.vcxproj -> D:\Documents\Visual Studio 2015\Projects\Server8\Debug\Server8.exe
-  Server8.vcxproj -> D:\Documents\Visual Studio 2015\Projects\Server8\Debug\Server8.pdb (Full PDB)
+﻿

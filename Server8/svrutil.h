@@ -259,7 +259,7 @@ public:
 
 	//构造函数file的实参为"console"时,向控制台输出日志
 	//否则写入指定文件,file为相对或绝对路径
-	LogModule(const string & file, const int & bufSize = DEFAULT_BUFFER_SIZE, const string & mode = string("a+")) {
+	LogModule(const string & file, const string & mode = string("a+"), const int & bufSize = DEFAULT_BUFFER_SIZE) {
 		if (bufSize < 0) {
 			exit(LOG_MODULE_ERROR);
 		}
@@ -310,6 +310,59 @@ public:
 		sprintf_s<32>(timeStamp, "[%04d/%02d/%02d %02d:%02d:%02d:%03d]: ", systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond, systemTime.wMilliseconds);
 
 		string format(timeStamp);
+		format += str;
+		format += "\n";
+
+		if (filePath == "console") {
+			num = ::vfprintf_s(stdout, format.c_str(), vl);
+		}
+		else {
+			int len = format.size();
+			if (len >= limit) {
+				flush();
+				num = ::vfprintf(pFile, format.c_str(), vl);
+			}
+			else {
+				EnterCriticalSection(&lock);
+				num = ::vsprintf_s(tempBuffer, limit, format.c_str(), vl);
+
+				if (-1 == num) {
+					LeaveCriticalSection(&lock);
+					return -1;
+				}
+
+				if (index + num >= limit) {
+					::fwrite(buffer, index, 1, pFile);
+					index = 0;
+					::fwrite(tempBuffer, num, 1, pFile);
+					::fflush(pFile);
+				}
+				else {
+					if (!memcpy_s(buffer + index, limit - index, tempBuffer, num)) {
+						index += num;
+					}
+					else {
+						LeaveCriticalSection(&lock);
+						return -1;
+					}
+				}
+
+				LeaveCriticalSection(&lock);
+			}
+		}
+
+		va_end(vl);
+		return num;
+	}
+
+	//向缓冲区写入数据.如果缓冲区已满,则写入指定文件中.
+	//当路径为"console"时,不缓冲,直接输出到控制台.
+	int print(const char * str, ...) {
+		va_list vl;
+		va_start(vl, str);
+
+		int num = 0;
+		string format("");
 		format += str;
 		format += "\n";
 
@@ -1003,7 +1056,7 @@ public:
 	}
 
 	bool setStatus(Status st) {
-		if (st == RUNNING || st = SUSPEND) {
+		if (st == RUNNING || st == SUSPEND) {
 			status = st;
 			return true;
 		}
@@ -1031,14 +1084,14 @@ public:
 		return true;
 	}
 
-	//src : pointer to head of http response
+	//src : pointer to head of http response , if success return 0
 	static int inflateHTTPGzip(void * dest, unsigned long destLen, void * src, unsigned long srcLen) {
-		unsigned char * pDest = (unsigned char *)dest;
-		unsigned char * pStart = NULL;
-		unsigned char * ptr = (unsigned char *)src;
+		char * pDest = (char *)dest;
+		char * pStart = NULL;
+		char * ptr = (char *)src;
 		unsigned long size = 0ul;
 		
-		pStart = (unsigned char *)strstr((char*)src, "\r\n\r\n");
+		pStart = strstr((char*)src, "\r\n\r\n");
 		if (!pStart) {
 			return INVALID_STRING;
 		}
@@ -1048,31 +1101,187 @@ public:
 			return INVALID_STRING;
 		}
 
-		pStart = (unsigned char *)strstr((char*)pStart, "\r\n");
+		pStart = strstr((char*)pStart, "\r\n");
 		if (!pStart) {
 			return INVALID_STRING;
 		}
 		pStart += 2;
 
-		z_stream strm;
-		strm.zalloc = Z_NULL;
-		strm.zfree = Z_NULL;
-		strm.opaque = Z_NULL;
-		strm.avail_in = size;
-		strm.next_in = pStart;
-		strm.avail_out = destLen;
-		strm.next_out = pDest;
-
-		if (inflateInit2(&strm, 47) != Z_OK){
-			return ZLIB_ERROR;
-		}
-
-		int ret = inflate(&strm, Z_NO_FLUSH);
-		if ( ret != 1) {
+		if (httpgzdecompress((unsigned char *)pStart, srcLen, (unsigned char *)dest, &destLen) == -1) {
 			return ZLIB_ERROR;
 		}
 		
 		return SUCCESS;
+	}
+
+	static int zcompress(Bytef *data, uLong ndata,
+		Bytef *zdata, uLong *nzdata)
+	{
+		z_stream c_stream;
+		int err = 0;
+		if (data && ndata > 0)
+		{
+			c_stream.zalloc = (alloc_func)0;
+			c_stream.zfree = (free_func)0;
+			c_stream.opaque = (voidpf)0;
+			if (deflateInit(&c_stream, Z_DEFAULT_COMPRESSION) != Z_OK) return -1;
+			c_stream.next_in = data;
+			c_stream.avail_in = ndata;
+			c_stream.next_out = zdata;
+			c_stream.avail_out = *nzdata;
+			while (c_stream.avail_in != 0 && c_stream.total_out < *nzdata)
+			{
+				if (deflate(&c_stream, Z_NO_FLUSH) != Z_OK) return -1;
+			}
+			if (c_stream.avail_in != 0) return c_stream.avail_in;
+			for (;;) {
+				if ((err = deflate(&c_stream, Z_FINISH)) == Z_STREAM_END) break;
+				if (err != Z_OK) return -1;
+			}
+			if (deflateEnd(&c_stream) != Z_OK) return -1;
+			*nzdata = c_stream.total_out;
+			return 0;
+		}
+		return -1;
+	}
+
+	/* Compress gzip data */
+	static int gzcompress(Bytef *data, uLong ndata,
+		Bytef *zdata, uLong *nzdata)
+	{
+		z_stream c_stream;
+		int err = 0;
+		if (data && ndata > 0)
+		{
+			c_stream.zalloc = (alloc_func)0;
+			c_stream.zfree = (free_func)0;
+			c_stream.opaque = (voidpf)0;
+			if (deflateInit2(&c_stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+				-MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK) return -1;
+			c_stream.next_in = data;
+			c_stream.avail_in = ndata;
+			c_stream.next_out = zdata;
+			c_stream.avail_out = *nzdata;
+			while (c_stream.avail_in != 0 && c_stream.total_out < *nzdata)
+			{
+				if (deflate(&c_stream, Z_NO_FLUSH) != Z_OK) return -1;
+			}
+			if (c_stream.avail_in != 0) return c_stream.avail_in;
+			for (;;) {
+				if ((err = deflate(&c_stream, Z_FINISH)) == Z_STREAM_END) break;
+				if (err != Z_OK) return -1;
+			}
+			if (deflateEnd(&c_stream) != Z_OK) return -1;
+			*nzdata = c_stream.total_out;
+			return 0;
+		}
+		return -1;
+	}
+
+	/* Uncompress data */
+	static int zdecompress(Byte *zdata, uLong nzdata,
+		Byte *data, uLong *ndata)
+	{
+		int err = 0;
+		z_stream d_stream; /* decompression stream */
+		d_stream.zalloc = (alloc_func)0;
+		d_stream.zfree = (free_func)0;
+		d_stream.opaque = (voidpf)0;
+		d_stream.next_in = zdata;
+		d_stream.avail_in = 0;
+		d_stream.next_out = data;
+		if (inflateInit(&d_stream) != Z_OK) return -1;
+		while (d_stream.total_out < *ndata && d_stream.total_in < nzdata) {
+			d_stream.avail_in = d_stream.avail_out = 1; /* force small buffers */
+			if ((err = inflate(&d_stream, Z_NO_FLUSH)) == Z_STREAM_END) break;
+			if (err != Z_OK) return -1;
+		}
+		if (inflateEnd(&d_stream) != Z_OK) return -1;
+		*ndata = d_stream.total_out;
+		return 0;
+	}
+
+	/* HTTP gzip decompress */
+	static int httpgzdecompress(Byte *zdata, uLong nzdata,
+		Byte *data, uLong *ndata)
+	{
+		int err = 0;
+		z_stream d_stream = { 0 }; /* decompression stream */
+		static char dummy_head[2] =
+		{
+			0x8 + 0x7 * 0x10,
+			(((0x8 + 0x7 * 0x10) * 0x100 + 30) / 31 * 31) & 0xFF,
+		};
+		d_stream.zalloc = (alloc_func)0;
+		d_stream.zfree = (free_func)0;
+		d_stream.opaque = (voidpf)0;
+		d_stream.next_in = zdata;
+		d_stream.avail_in = 0;
+		d_stream.next_out = data;
+		if (inflateInit2(&d_stream, 47) != Z_OK) 
+			return -1;
+		while (d_stream.total_out < *ndata && d_stream.total_in < nzdata) {
+			d_stream.avail_in = d_stream.avail_out = 1; /* force small buffers */
+			if ((err = inflate(&d_stream, Z_NO_FLUSH)) == Z_STREAM_END) break;
+			if (err != Z_OK)
+			{
+				if (err == Z_DATA_ERROR)
+				{
+					d_stream.next_in = (Bytef*)dummy_head;
+					d_stream.avail_in = sizeof(dummy_head);
+					if ((err = inflate(&d_stream, Z_NO_FLUSH)) != Z_OK)
+					{
+						return -1;
+					}
+				}
+				else return -1;
+			}
+		}
+		if (inflateEnd(&d_stream) != Z_OK) 
+			return -1;
+		*ndata = d_stream.total_out;
+		return 0;
+	}
+
+	/* Uncompress gzip data */
+	static int gzdecompress(Byte *zdata, uLong nzdata,
+		Byte *data, uLong *ndata)
+	{
+		int err = 0;
+		z_stream d_stream = { 0 }; /* decompression stream */
+		static char dummy_head[2] =
+		{
+			0x8 + 0x7 * 0x10,
+			(((0x8 + 0x7 * 0x10) * 0x100 + 30) / 31 * 31) & 0xFF,
+		};
+		d_stream.zalloc = (alloc_func)0;
+		d_stream.zfree = (free_func)0;
+		d_stream.opaque = (voidpf)0;
+		d_stream.next_in = zdata;
+		d_stream.avail_in = 0;
+		d_stream.next_out = data;
+		if (inflateInit2(&d_stream, -MAX_WBITS) != Z_OK) return -1;
+		//if(inflateInit2(&d_stream, 47) != Z_OK) return -1;
+		while (d_stream.total_out < *ndata && d_stream.total_in < nzdata) {
+			d_stream.avail_in = d_stream.avail_out = 1; /* force small buffers */
+			if ((err = inflate(&d_stream, Z_NO_FLUSH)) == Z_STREAM_END) break;
+			if (err != Z_OK)
+			{
+				if (err == Z_DATA_ERROR)
+				{
+					d_stream.next_in = (Bytef*)dummy_head;
+					d_stream.avail_in = sizeof(dummy_head);
+					if ((err = inflate(&d_stream, Z_NO_FLUSH)) != Z_OK)
+					{
+						return -1;
+					}
+				}
+				else return -1;
+			}
+		}
+		if (inflateEnd(&d_stream) != Z_OK) return -1;
+		*ndata = d_stream.total_out;
+		return 0;
 	}
 };
 
