@@ -1,4 +1,5 @@
 #include "../Server8/svrutil.h"
+#include "boost\regex.hpp"
 
 using namespace svrutil;
 using namespace std;
@@ -16,11 +17,11 @@ public:
 
 	svrutil::SRWLock							lock;
 	std::set<std::string>						visitedURL;
-	std::regex									URLPattern;
+	boost::regex								URLPattern;
 
 public:
 	Indexer(const string & host, int num) : host(host), threadNum(num) {
-		URLPattern = std::regex(R"((?:http\://)?(?:[\w-]*\.)*bilibili.com(?:/[\w-]*)*(?:\.\w*)?)");
+		URLPattern = boost::regex(R"((?:http\://)?(?:[\w-]*\.)*bilibili.com(?:/[\w-]*)*(?:\.\w*)?|(?<=href\=")(?:/[\w-]*)+(?:\.\w*)?(?="))");
 
 		std::list<string> list;
 		GetHostByName::getIPList(this->host, &list);
@@ -30,6 +31,7 @@ public:
 		}
 		ip = list.front();
 		Log.write("init success, waiting");
+		Sleep(100);
 	}
 
 	virtual ~Indexer() {
@@ -93,6 +95,8 @@ public:
 	bool process(const string & url, Indexer * pIndexer, std::list<std::string> * pList) {
 		char * pData = new char[pIndexer->maxDataSize];
 		ZeroMemory(pData, pIndexer->maxDataSize);
+		char * ptr = pData;
+
 		char * pPacket = new char[pIndexer->maxDataSize];
 		ZeroMemory(pPacket, pIndexer->maxDataSize);
 
@@ -121,49 +125,67 @@ public:
 		}
 
 		//get response
-		int count = recv(sockClient, pData, pIndexer->maxDataSize - 1, 0);
-		if (count == SOCKET_ERROR) {
+		int count = 0;
+		int recvRet = 0;
+		while ((recvRet = recv(sockClient, ptr, pIndexer->maxDataSize - count, 0)) > 0) {
+			ptr += recvRet;
+			count += recvRet;
+		}
+
+		if (recvRet == SOCKET_ERROR) {
 			Log.write("recv error: %d", GetLastError());
 			LogError.write("recv error: %d\nrequest:\n%s\n", GetLastError(), request.c_str());
 			delete pData;
 			delete pPacket;
 			return false;
 		}
-
-		if (count == 0) {
-			Log.write("connection closed by server");
-			LogError.write("connection closed by server\nrequest:\n%s\n", request.c_str());
-			delete pData;
-			delete pPacket;
-			return false;
-		}
-
 		pData[count] = '\0';
 
 		//decompress
-		int zlibRet = Zlib::inflateHTTPGzip(pPacket, pIndexer->maxDataSize, pData, count);
-		if (zlibRet != Zlib::SUCCESS) {
-			Log.write("zlib error: %d", zlibRet);
-			LogError.write("zlib error: %d\nrequest:\n%s\nresponse:\n%s\n",zlibRet,request.c_str(), pData);
-			//memcpy_s(pPacket, pIndexer->maxDataSize, pData, count + 1);
-			LogError.flush();
-			return false;
+
+		unsigned long dataLen = (unsigned long)count;
+		if (strstr(pData, "Content-Encoding") || strstr(pData, "Content-Encoding")) {
+			int zlibRet = Zlib::inflateHTTPGzip(pPacket, pIndexer->maxDataSize, pData, pIndexer->maxDataSize, &dataLen);
+			if (zlibRet != Zlib::SUCCESS) {
+				Log.write("zlib error: %d", zlibRet);
+				LogError.write("zlib error: %d\nrequest:\n%s\nresponse:\n%s\n", zlibRet, request.c_str(), pData);
+				LogError.flush();
+				delete pData;
+				delete pPacket;
+				return false;
+			}
+			
+			if (dataLen < count) {
+				Log.write("zlib error: %d", zlibRet);
+				LogError.write("zlib error: %d\nrequest:\n%s\nresponse:\n%s\n", zlibRet, request.c_str(), pData);
+				delete pData;
+				delete pPacket;
+				return false;
+			}
+		}
+		else {
+			memcpy_s(pPacket, count, pData, count);
 		}
 
-		//get url
-		string _data(pPacket);
-		cout << _data.size() << endl;
-		LogFile.write("%s", _data.c_str());
+		pPacket[dataLen] = '\0';
+		string targetString(pPacket);
+		cout << targetString.size() << endl;
+		LogFile.write("%s", targetString.c_str());
 		LogFile.flush();
-		//std::regex	URLPattern(R"((?:http\://)?(?:[\w-]*\.)*bilibili.com(?:/[\w-]*)*(?:\.\w*)?)");
-		std::regex_iterator<string::iterator> it(_data.begin(), _data.end(), pIndexer->URLPattern);
-		std::regex_iterator<string::iterator> end;
+		//boost::regex URLPattern(R"((?:http\://)?(?:[\w-]*\.)*bilibili.com(?:/[\w-]*)*(?:\.\w*)?|(?<=href\=")(?:/[\w-]*)+(?:\.\w*)?(?="))");
+		boost::sregex_iterator it(targetString.begin(), targetString.end(), pIndexer->URLPattern);
+		boost::sregex_iterator end;
 
-		while (it != end) {
-			pList->push_back(it->str());
-			std::cout << it->str() << std::endl;
-			++it;
+		for (; it != end; ++it)
+		{
+			string tempURL = it->str();
+			if (tempURL[0] == '/') {
+				tempURL = string("http://") + pIndexer->host + tempURL;
+			}
+			cout << tempURL << endl;
+			pList->push_back(tempURL);
 		}
+
 
 		//get target infomation
 		//puts("aaaaaaa");
@@ -234,6 +256,8 @@ int main(void) {
 	dispatcher.setStatus(EventDispatcher<CallbackItem>::RUNNING);
 
 	while (true) {
+		LogFile.flush();
+		LogError.flush();
 		Sleep(5000);
 	}
 

@@ -1085,12 +1085,12 @@ public:
 	}
 
 	//src : pointer to head of http response , if success return 0
-	static int inflateHTTPGzip(void * dest, unsigned long destLen, void * src, unsigned long srcLen) {
+	static int inflateHTTPGzip(void * dest, unsigned long destLen, void * src, unsigned long srcLen, unsigned long * outputLen) {
 		char * pDest = (char *)dest;
 		char * pStart = NULL;
 		char * ptr = (char *)src;
 		unsigned long size = 0ul;
-		
+
 		pStart = strstr((char*)src, "\r\n\r\n");
 		if (!pStart) {
 			return INVALID_STRING;
@@ -1107,10 +1107,32 @@ public:
 		}
 		pStart += 2;
 
-		if (httpgzdecompress((unsigned char *)pStart, srcLen, (unsigned char *)dest, &destLen) == -1) {
+		/*if (httpgzdecompress((unsigned char *)pStart, size , (unsigned char *)dest, pDestLen) == -1) {
+			return ZLIB_ERROR;
+		}*/
+
+		z_stream d_stream ;
+		ZeroMemory(&d_stream, sizeof(z_stream));
+		d_stream.avail_in = size;
+		d_stream.next_in = (unsigned char *)pStart;
+		d_stream.avail_out = destLen - 1;
+		d_stream.next_out = (unsigned char *)dest;
+
+		int err = 0;
+		if ((err = inflateInit2(&d_stream, 47)) != Z_OK) {
 			return ZLIB_ERROR;
 		}
 		
+		if ((err = inflate(&d_stream, Z_NO_FLUSH)) != Z_STREAM_END ){
+			return ZLIB_ERROR;
+		}
+
+		if ((err = inflateEnd(&d_stream)) != Z_OK) {
+			return ZLIB_ERROR;
+		}
+
+		*outputLen = d_stream.total_out;
+
 		return SUCCESS;
 	}
 
@@ -1201,7 +1223,9 @@ public:
 		return 0;
 	}
 
-	/* HTTP gzip decompress */
+	/* HTTP gzip decompress ,pointer to src, source length, pointer to output, pointer 
+		to outpu length
+	*/
 	static int httpgzdecompress(Byte *zdata, uLong nzdata,
 		Byte *data, uLong *ndata)
 	{
@@ -1222,7 +1246,8 @@ public:
 			return -1;
 		while (d_stream.total_out < *ndata && d_stream.total_in < nzdata) {
 			d_stream.avail_in = d_stream.avail_out = 1; /* force small buffers */
-			if ((err = inflate(&d_stream, Z_NO_FLUSH)) == Z_STREAM_END) break;
+			if ((err = inflate(&d_stream, Z_NO_FLUSH)) == Z_STREAM_END) 
+				break;
 			if (err != Z_OK)
 			{
 				if (err == Z_DATA_ERROR)
