@@ -62,7 +62,7 @@ struct ArgItem {
 	void * pDispatcher;
 	std::string bangumiID;
 	std::string seasonID;
-	std::string episodeID;
+	std::string videoID;
 	std::string currentURL;
 	Indexer::Operation operation;
 };
@@ -198,6 +198,14 @@ private:
 	}
 
 	void getSeasonList(ArgItem * pArg, char * data, int length) {
+		Indexer * pIndexer = pArg->pIndexer;
+		pIndexer->lock.AcquireShared();
+		if (pIndexer->markedSeason.find(pArg->bangumiID) != pIndexer->markedSeason.end()) {
+			pIndexer->lock.ReleaseShared();
+			return;
+		}
+		pIndexer->lock.ReleaseShared();
+
 		string str(data);
 		std::string::iterator start = str.begin();
 		std::string::iterator end = str.end();
@@ -206,6 +214,10 @@ private:
 
 		if (boost::regex_search(start, end, results, currentSeasonPattern)) {
 			SeasonFile.write("%s\n{\"bangumi_id\":\"%s\",\"cover\":\"%s\",\"is_finish\":\"%s\",\"newest_ep_id\":\"%s\",\"newest_ep_index\":\"%s\",\"season_id\":\"%s\",\"season_status\":%s,\"title\":\"%s\",\"total_count\":\"%s\"}",pArg->bangumiID.c_str() , results[1].str().c_str(), results[2].str().c_str(), results[3].str().c_str(), results[4].str().c_str(), results[5].str().c_str(), results[6].str().c_str(), results[7].str().c_str(), results[8].str().c_str(), results[9].str().c_str());
+
+			//get ready for getSeasonDetail
+			pArg->operation = Indexer::Operation::GetSeasonDetail;
+			pArg->seasonID = pArg->bangumiID;
 		}
 		else {
 			Log.write("cannot get current season");
@@ -233,23 +245,80 @@ private:
 
 				ArgItem * arg = new ArgItem;
 				arg->pDispatcher = pArg->pDispatcher;
-				arg->pIndexer = pArg->pIndexer;
+				arg->pIndexer = pIndexer;
 				arg->bangumiID = pArg->bangumiID;
 				arg->seasonID = *it;
+				
 				arg->operation = Indexer::Operation::GetSeasonDetail;
 				arg->currentURL = targetURL;
 				((EventDispatcher<ArgItem>*)pArg->pDispatcher)->submitEvent("callback", arg);
+
 				++it;
 			}
 		}
 	}
 
 	void getSeasonDetail(ArgItem * pArg, char * data, int length) {
+		if (pArg->seasonID.size() == 0) {
+			return;
+		}
 
+		//marked
+		Indexer * pIndexer = pArg->pIndexer;
+		pIndexer->lock.AcquireExclusive();
+		if (pIndexer->markedSeason.find(pArg->seasonID) != pIndexer->markedSeason.end()) {
+			pIndexer->lock.ReleaseShared();
+			return;
+		}
+		else {
+			pIndexer->markedSeason.insert(pArg->seasonID);
+		}
+		pIndexer->lock.ReleaseExclusive();
+
+		//parse data
+		string str(data);
+		std::string::iterator start = str.begin();
+		std::string::iterator end = str.end();
+		std::list<string> episodeIDList;
+		boost::match_results<std::string::iterator> results;
+		//todo:header
+		SeasonDetailFile.write("%s %s\n%s", pArg->bangumiID.c_str(), pArg->seasonID.c_str(), data);
+		SeasonDetailFile.flush();
+
+		while (boost::regex_search(start, end, results, episodeIndexPattern)) {
+			episodeIDList.push_back(results[1].str());
+			start = results[0].second;
+		}
+
+		if (episodeIDList.size() != 0) {
+			std::list<string>::iterator it = episodeIDList.begin();
+			std::list<string>::iterator _end = episodeIDList.end();
+
+			while (it != _end) {
+				//http://api.bilibili.com/archive_stat/stat?aid=12275&type=jsonp
+
+				string targetURL("http://api.bilibili.com/archive_stat/stat?aid=");
+				targetURL += *it;
+				targetURL += "&type=jsonp";
+				
+				ArgItem * arg = new ArgItem;
+				arg->pDispatcher = pArg->pDispatcher;
+				arg->pIndexer = pIndexer;
+				arg->bangumiID = pArg->bangumiID;
+				arg->seasonID = pArg->seasonID;
+				arg->videoID = *it;
+				arg->operation = Indexer::Operation::GetVideoDetail;
+				arg->currentURL = targetURL;
+				((EventDispatcher<ArgItem>*)pArg->pDispatcher)->submitEvent("callback", arg);
+
+				++it;
+			}
+		}
 	}
 
 	void getVideoDetail(ArgItem * pArg, char * data, int length) {
-
+		VideoFile.write("%s %s %s\n%s", pArg->bangumiID.c_str(),pArg->seasonID.c_str(),pArg->videoID.c_str(), data);
+		VideoFile.flush();
 	}
 
 public:
@@ -260,46 +329,46 @@ public:
 
 		currentSeasonPattern = boost::regex(R"!("bangumi_id":"([^"]*)".*?"cover":"([^"]*)".*?"is_finish":"([^"]*)".*?"newest_ep_id":"([^"]*)","newest_ep_index":"([^"]*)".*?"season_id":"([^"]*)","season_status":(\d+),"season_title":"([^"]*)".*?"total_count":"([^"]*)",)!");
 
-		episodeIndexPattern = boost::regex(R"!(<a class="v1-complete-text" href="([^"]*)" target="[^"]*" title="([^"]*)">)!");
+		episodeIndexPattern = boost::regex(R"!({"av_id":"([^"]*)","coins":"([^"]*)","cover":"([^"]*)","episode_id":"([^"]*)","episode_status":(\d*?),"index":"([^"]*)","index_title":"([^"]*)",(?:"is_new":"([^"]*)",)?"is_webplay":"([^"]*)","mid":"([^"]*)","page":"([^"]*)","up":{(.*?)},"update_time":"([^"]*)","webplay_url":"([^"]*)"})!");
 	}
 
-	void run(ArgItem * pCI) {
+	void run(ArgItem * pArg) {
 		char * output = new char[maxDataSize];
 		int length = 0;
 
-		if (pCI->currentURL.size()) {
-			length = getData(pCI, output, maxDataSize);
+		if (pArg->currentURL.size()) {
+			length = getData(pArg, output, maxDataSize);
 			output[length] = 0;
-			puts(output);
+			Log.write("%s %s %s", pArg->bangumiID.c_str(), pArg->seasonID.c_str(), pArg->videoID.c_str());
 		}
 		else {
 			goto loc_exit;
 		}
 
 		if (length <= 0) {
-			((EventDispatcher<ArgItem>*)pCI->pDispatcher)->submitEvent("callback", pCI);
+			((EventDispatcher<ArgItem>*)pArg->pDispatcher)->submitEvent("callback", pArg);
 			return;
 		}
 
-		switch (pCI->operation) {
+		switch (pArg->operation) {
 			case Indexer::Operation::GetBangumiList:
-				getBangumiList(pCI, output, length);
+				getBangumiList(pArg, output, length);
 				break;
 			case Indexer::Operation::GetSeasonList:
-				getSeasonList(pCI, output, length);
-				break;
+				getSeasonList(pArg, output, length);
+				//break;
 			case Indexer::Operation::GetSeasonDetail:
-				getSeasonDetail(pCI, output, length);
+				getSeasonDetail(pArg, output, length);
 				break;
 			case Indexer::Operation::GetVideoDetail:
-				getVideoDetail(pCI, output, length);
+				getVideoDetail(pArg, output, length);
 				break;
 			default:
 				break;
 		}
 
 		loc_exit:
-		delete pCI;
+		delete pArg;
 	}
 };
 
