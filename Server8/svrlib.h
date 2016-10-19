@@ -33,6 +33,7 @@
 #include "../zlib/include/zconf.h"
 #include "../zlib/include/zlib.h"
 #pragma comment(lib, "../zlib/lib/zlib.lib")
+#import "../ado/msado15.dll" no_namespace rename("EOF", "EndOfFile")
 
 //detect memory leak
 

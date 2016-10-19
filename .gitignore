@@ -63,4 +63,8 @@ Temporary Items
 *.vcxproj.filters
 *.iobj
 *.ipdb
+*.tlh
+*.tli
+*.enc
 /.vs/config/applicationhost.config
+

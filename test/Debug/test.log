@@ -1,1 +1,8 @@
-﻿
+﻿  test.cpp
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(52): warning C4244: “=”: 从“LONGLONG”转换到“double”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(98): warning C4244: “参数”: 从“const unsigned __int64”转换到“DWORD”，可能丢失数据
+d:\documents\visual studio 2015\projects\server8\server8\svrutil.h(797): warning C4244: “初始化”: 从“unsigned __int64”转换到“int”，可能丢失数据
+  protocol.cpp
+  正在生成代码...
+  test.vcxproj -> D:\Documents\Visual Studio 2015\Projects\Server8\Debug\test.exe
+  test.vcxproj -> D:\Documents\Visual Studio 2015\Projects\Server8\Debug\test.pdb (Full PDB)

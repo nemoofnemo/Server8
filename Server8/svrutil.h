@@ -29,6 +29,7 @@ namespace svrutil {
 	class GetHostByName;
 	class Zlib;
 	class RegexEx;
+	class SQLServerADO;
 	
 	template<typename type>
 	class EventDispatcher;
@@ -100,133 +101,6 @@ public:
 };
 
 //log module
-#ifdef UNICODE_SUPPORT
-//todo: fix bugs
-class LogModule {
-private:
-	static const int	 DEFAULT_BUFFER_SIZE = 0x2000;
-	static const int	 LOG_MODULE_ERROR = 501;
-
-	WCHAR *	buffer;
-	int			index;
-	int			limit;
-	wstring		filePath;
-	FILE *		pFile;
-	CRITICAL_SECTION lock;
-
-	//not available
-	LogModule() {
-
-	}
-
-	//not available
-	LogModule(const LogModule & lm) {
-
-	}
-
-	//not available
-	void operator=(const LogModule &) {
-
-	}
-
-public:
-
-	//构造函数file的实参为"console"时,向控制台输出日志
-	//否则写入指定文件,file为相对或绝对路径
-	LogModule(const wstring & file, const int & bufSize = DEFAULT_BUFFER_SIZE, const wstring & mode = wstring(L"a")) {
-		if (bufSize < 0) {
-			exit(LOG_MODULE_ERROR);
-		}
-
-		filePath = file;
-		index = 0;
-		limit = bufSize;
-		buffer = NULL;
-		//pFile = NULL;
-
-		if (file == L"console") {
-			pFile = stdout;
-		}
-		else if (0 != ::_wfopen_s(&pFile, file.c_str(), mode.c_str())) {
-			exit(LOG_MODULE_ERROR);
-		}
-		else {
-			buffer = new WCHAR[limit];
-		}
-
-		if (!InitializeCriticalSectionAndSpinCount(&lock, 0x1000)) {
-			exit(LOG_MODULE_ERROR);
-		}
-	}
-
-	~LogModule() {
-		flush();
-		if (filePath != L"console") {
-			char tail = 0;
-			fwrite(&tail, 1, 1, pFile);
-			fclose(pFile);
-			delete[] buffer;
-		}
-		DeleteCriticalSection(&lock);
-	}
-
-	//向缓冲区写入数据.如果缓冲区已满,则写入指定文件中.
-	//当路径为"console"时,不缓冲,直接输出到控制台.
-	int write(const WCHAR * str, ...) {
-		int num = 0;
-		WCHAR timeStamp[32] = L"";//char timeStamp[] = "[YYYY/MM/DD-HH:MM:SS:mmmm]: ";
-
-		SYSTEMTIME systemTime;
-		GetSystemTime(&systemTime);
-		swprintf_s<32>(timeStamp, L"[%04d/%02d/%02d %02d:%02d:%02d:%04d]: ", systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond, systemTime.wMilliseconds);
-
-		wstring format(timeStamp);
-		format += str;
-		format += L"\n";
-
-		va_list vl;
-		va_start(vl, str);
-
-		if (filePath == L"console") {
-			num = ::vfwprintf_s(stdout, format.c_str(), vl);
-		}
-		else {
-			int len = format.size();
-			if (len >= limit) {
-				flush();
-				num = ::vfwprintf(pFile, format.c_str(), vl);
-			}
-			else {
-				if (index + len >= limit) {
-					flush();
-				}
-				EnterCriticalSection(&lock);
-				num = ::vswprintf_s(buffer + index, limit - index, format.c_str(), vl);
-				index += num;
-				LeaveCriticalSection(&lock);
-			}
-		}
-		va_end(vl);
-
-		return num;
-	}
-
-	//提交缓冲区内容到物理存储器
-	void flush(void) {
-		if (filePath != L"console") {
-			EnterCriticalSection(&lock);
-			::fwrite(buffer, sizeof(WCHAR), index, pFile);
-			::fflush(pFile);
-			index = 0;
-			LeaveCriticalSection(&lock);
-		}
-	}
-};
-#else
-//带有缓冲区的日志记录模块
-//构造函数file的实参为"console"时,向控制台输出日志
-//否则写入指定文件,file为相对或绝对路径
-//错误代码501
 class svrutil::LogModule : public Object {
 private:
 	static const int	 DEFAULT_BUFFER_SIZE = 0x100000;
@@ -419,7 +293,6 @@ public:
 		}
 	}
 };
-#endif
 
 //critical section
 class svrutil::CriticalSection : public Object {
@@ -889,7 +762,7 @@ template<typename ArgType>
 class svrutil::EventDispatcher {
 public:
 	const int DEFAULT_MAXTHREAD_NUM = 16;
-	const int DEFAULT_SLEEP_TIME = 233;
+	const int DEFAULT_SLEEP_TIME = 100;
 
 	enum Status {RUNNING,SUSPEND,HALT};
 
@@ -1067,7 +940,7 @@ public:
 
 };
 
-//Zlib:for gzip in http
+//todo:Zlib:for gzip in http
 class svrutil::Zlib {
 private:
 	static HMODULE hModule;
@@ -1310,7 +1183,7 @@ public:
 	}
 };
 
-//regex
+//todo:regex
 class svrutil::RegexEx {
 public:
 	static bool getList(string & data, const std::string & pattern, std::list<string> * pList) {
@@ -1328,6 +1201,61 @@ public:
 		}
 
 		return true;
+	}
+};
+
+class svrutil::SQLServerADO {
+private:
+	_ConnectionPtr pConnection;
+
+
+public:
+	SQLServerADO() {
+		HRESULT hr = CoInitialize(NULL);
+		assert(SUCCEEDED(hr));
+	}
+
+	virtual ~SQLServerADO() {
+		if (NULL != pConnection) {
+			pConnection->Close();
+		}
+	}
+
+	//Provider = SQLOLEDB.1; Password = 123456; Persist Security Info = True; User ID = program; Initial Catalog = Indexer; Data Source = 127.0.0.1
+	bool init(const string & connStr) {
+		try
+		{    //Connecting
+			if (!FAILED(pConnection.CreateInstance(_uuidof(Connection)))) {
+				pConnection->CommandTimeout = 5;// 设置连接超时值，单位为秒
+				if (!FAILED(pConnection->Open((_bstr_t)(connStr.c_str()), "", "", adModeUnknown)))
+					return true;
+			}
+		}
+		catch (_com_error e) {
+			return false;
+		}
+	}
+
+	bool ExecuteSQL(const string & sql, long & nRefreshNum) {
+		bool bResult = false;
+		const char * szSQLStr = sql.c_str();
+
+		if (sql.size() == 0) {
+			return false;
+		}
+
+		try{
+			_variant_t RefreshNum;
+			pConnection->Execute(_bstr_t(szSQLStr), &RefreshNum, adCmdText);
+			bResult = true;
+			nRefreshNum = RefreshNum.lVal;
+		}
+		catch (_com_error e){
+			//...
+		}
+
+		return bResult;
+
 	}
 };
 
