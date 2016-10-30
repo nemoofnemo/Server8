@@ -1234,28 +1234,26 @@ public:
 		catch (_com_error e) {
 			return false;
 		}
+		return false;
 	}
 
-	bool ExecuteSQL(const string & sql, long & nRefreshNum) {
+	bool ExecuteSQL(const char * sql, long * pNum = NULL) {
 		bool bResult = false;
-		const char * szSQLStr = sql.c_str();
-
-		if (sql.size() == 0) {
-			return false;
-		}
 
 		try{
 			_variant_t RefreshNum;
-			pConnection->Execute(_bstr_t(szSQLStr), &RefreshNum, adCmdText);
+			pConnection->Execute(_bstr_t(sql), &RefreshNum, adCmdText);
 			bResult = true;
-			nRefreshNum = RefreshNum.lVal;
+			
+			if (pNum) {
+				*pNum = RefreshNum.lVal;
+			}
 		}
 		catch (_com_error e){
-			//...
+			return false;
 		}
 
 		return bResult;
-
 	}
 };
 
