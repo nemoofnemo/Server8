@@ -761,11 +761,15 @@ public:
 template<typename ArgType>
 class svrutil::EventDispatcher {
 public:
+	//默认线程数
 	const int DEFAULT_MAXTHREAD_NUM = 16;
+	//默认等待时间
 	const int DEFAULT_SLEEP_TIME = 100;
 
+	//分发器运行状态
 	enum Status {RUNNING,SUSPEND,HALT};
 
+	//回调接口
 	template<typename _ArgType>
 	class Callback {
 	private:
@@ -786,6 +790,7 @@ public:
 
 		}
 
+		//事件会触发该方法
 		virtual void run(_ArgType * pArg) {
 			
 		}
@@ -801,6 +806,7 @@ private:
 	std::map<std::string, Callback<ArgType>*> callbackMap;
 	svrutil::SRWLock lock;
 
+	//当事件队列中出现事件时，进行处理
 	static unsigned int __stdcall workThread(void * pArg) {
 		EventDispatcher * pDispatcher = (EventDispatcher*)pArg;
 		string name;
@@ -888,6 +894,7 @@ public:
 		Sleep(200);
 	}
 
+	//添加回调函数。以string与指向callback的子类指针为键值对存储
 	bool addCallback(const std::string & name, Callback<ArgType> * pCallback) {
 		if (name.size() == 0 || pCallback == NULL) {
 			return false;
@@ -903,6 +910,7 @@ public:
 		return true;
 	}
 
+	//移除已有回调函数
 	bool removeCallback(const std::string & name) {
 		if (name.size() == 0) {
 			return false;
@@ -918,6 +926,7 @@ public:
 		return true;
 	}
 
+	//向指定回调函数提交事件
 	bool submitEvent(const std::string & name,ArgType * pArg) {
 		lock.AcquireExclusive();
 		std::map<std::string, Callback<ArgType>*>::iterator it = callbackMap.find(name);
@@ -928,6 +937,7 @@ public:
 		return true;
 	}
 
+	//改变运行状态
 	bool setStatus(Status st) {
 		if (st == RUNNING || st == SUSPEND) {
 			status = st;
