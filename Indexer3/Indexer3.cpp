@@ -65,13 +65,14 @@ public:
 class Indexer {
 public:
 	string ip;
+	void * pDispatcher;
 	int currentID;
 	svrutil::SRWLock lock;
 };
 
 class ArgItem {
 public:
-	string * pIP;
+	Indexer * pIndexer;
 	string currentURL;
 };
 
@@ -108,7 +109,7 @@ public:
 		ZeroMemory(output, limit);
 
 		SOCKADDR_IN addrSrv;
-		inet_pton(AF_INET, pArg->pIP->c_str(), &addrSrv.sin_addr);
+		inet_pton(AF_INET, pArg->pIndexer->ip.c_str(), &addrSrv.sin_addr);
 		addrSrv.sin_family = AF_INET;
 		addrSrv.sin_port = htons(80);
 
@@ -121,12 +122,6 @@ public:
 		}
 
 		string request = HTTPRequest::create(pArg->currentURL);
-		//if (pArg->operation == Indexer::Operation::GetVideoID) {
-		//	request = HTTPRequest::create(pArg->currentURL, string("episode_id=") + pArg->episodeID, string(""), string("POST"));
-		//}
-		//else {
-		//	request = HTTPRequest::create(pArg->currentURL);
-		//}
 
 		if (send(sockClient, request.c_str(), request.size(), 0) != request.size()) {
 			Log.write("send error: %d", GetLastError());
@@ -167,17 +162,86 @@ public:
 	}
 };
 
+class IndexerCallback : public svrutil::EventDispatcher<ArgItem>::Callback<ArgItem> {
+private:
+	static const int maxDataSize = 0x1000;
+	boost::regex infoPattern;
+
+	bool parse(char * data, int limit) {
+
+	}
+
+public:
+	IndexerCallback() {
+		infoPattern = boost::regex(R"!()!");//todo
+	}
+
+	void run(ArgItem * parg) {
+		//1.send request : if send error then retry.
+		//2.parse response and record data : if parse error or record error then log error. 
+		char * output = new char[maxDataSize];
+		int count = GetData::getData(parg, output, maxDataSize);
+		if (count == -1) {
+			static_cast<svrutil::EventDispatcher<ArgItem> *>(parg->pIndexer->pDispatcher)->submitEvent("func", parg);
+		}
+		else if (count == 0) {
+			//log error
+		}
+		
+		if (parse(output, count) == true) {
+			//do nothing
+		}
+		else {
+			//log error
+		}
+
+		delete[] output;
+		delete parg;
+	}
+};
+
 void deployIndexer(void) {
 	string ip = svrutil::GetHostByName::getFirstIP("api.bilibili.com");
-
 	int start = 0;
 	int end = 1000;
+	int threadNum = 64;
+	Indexer indexer;
+	indexer.ip = ip;
+	indexer.currentID = start;
+	
+	svrutil::EventDispatcher<ArgItem> dispatcher(threadNum);
+	dispatcher.setStatus(svrutil::EventDispatcher<ArgItem>::Status::HALT);
+	indexer.pDispatcher = static_cast<void *>(&dispatcher);
 
-	svrutil::EventDispatcher<ArgItem> dispatcher(32);
+	IndexerCallback callback;
+	dispatcher.addCallback("func", &callback);
+
+	for (int i = 1; i <= threadNum; ++i) {
+		//http://api.bilibili.com/archive_stat/stat?aid=12275&type=jsonp
+		string url = "http://api.bilibili.com/archive_stat/stat?aid=";
+		url += boost::lexical_cast<string>(0);
+		url += "&type=jsonp";
+
+		ArgItem * ptr = new ArgItem;
+		ptr->pIndexer = &indexer;
+		ptr->currentURL = url;
+		dispatcher.submitEvent("func", ptr);
+	}
+	indexer.currentID = threadNum;
+
+	//start dispatcher
+	dispatcher.setStatus(svrutil::EventDispatcher<ArgItem>::Status::RUNNING);
+
+	while (true) {
+		LogFile.flush();
+		LogError.flush();
+		Sleep(5000);
+	}
 
 }
 
 int main(void) {
+	system("pause");
 	SocketLibrary::load();
 	deployIndexer();
 	SocketLibrary::unload();
