@@ -948,6 +948,10 @@ public:
 		}
 	}
 
+	int getEventCount(void) const {
+		return eventList.size();
+	}
+
 };
 
 //todo:Zlib:for gzip in http

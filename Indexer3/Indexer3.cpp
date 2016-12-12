@@ -67,6 +67,7 @@ public:
 	string ip;
 	void * pDispatcher;
 	int currentID;
+	int endID;
 	svrutil::SRWLock lock;
 };
 
@@ -168,7 +169,8 @@ private:
 	boost::regex infoPattern;
 
 	bool parse(char * data, int limit) {
-
+		LogFile.write("%s", data);
+		return true;
 	}
 
 public:
@@ -186,6 +188,11 @@ public:
 		}
 		else if (count == 0) {
 			//log error
+			LogError.write("recv count 0: %s", parg->currentURL.c_str());
+			LogError.flush();
+			//should submit event again
+			static_cast<svrutil::EventDispatcher<ArgItem> *>(parg->pIndexer->pDispatcher)->submitEvent("func", parg);
+			return;
 		}
 		
 		if (parse(output, count) == true) {
@@ -193,21 +200,39 @@ public:
 		}
 		else {
 			//log error
+			LogError.write("cannot parse: %s", parg->currentURL.c_str());
+			LogError.flush();
 		}
 
-		delete[] output;
+		ArgItem * pItem = new ArgItem;
+		pItem->pIndexer = parg->pIndexer;
+
+		pItem->pIndexer->lock.AcquireExclusive();
+		if (pItem->pIndexer->currentID < pItem->pIndexer->endID) {
+			//submit new event			
+			pItem->pIndexer->currentID++;
+			pItem->currentURL = "http://api.bilibili.com/archive_stat/stat?aid="
+				+ boost::lexical_cast<string>(pItem->pIndexer->currentID)
+				+ "&type=jsonp";
+			static_cast<svrutil::EventDispatcher<ArgItem> *>(pItem->pIndexer->pDispatcher)->submitEvent("func", pItem);
+		}
+		parg->pIndexer->lock.ReleaseExclusive();
+		
 		delete parg;
+		delete[] output;
 	}
 };
 
 void deployIndexer(void) {
 	string ip = svrutil::GetHostByName::getFirstIP("api.bilibili.com");
-	int start = 0;
-	int end = 1000;
-	int threadNum = 64;
+	int start = 1;
+	int end = 20;
+	int threadNum = 8;
+
 	Indexer indexer;
 	indexer.ip = ip;
 	indexer.currentID = start;
+	indexer.endID = end;
 	
 	svrutil::EventDispatcher<ArgItem> dispatcher(threadNum);
 	dispatcher.setStatus(svrutil::EventDispatcher<ArgItem>::Status::HALT);
@@ -219,7 +244,7 @@ void deployIndexer(void) {
 	for (int i = 1; i <= threadNum; ++i) {
 		//http://api.bilibili.com/archive_stat/stat?aid=12275&type=jsonp
 		string url = "http://api.bilibili.com/archive_stat/stat?aid=";
-		url += boost::lexical_cast<string>(0);
+		url += boost::lexical_cast<string>(i);
 		url += "&type=jsonp";
 
 		ArgItem * ptr = new ArgItem;
@@ -234,14 +259,16 @@ void deployIndexer(void) {
 
 	while (true) {
 		LogFile.flush();
-		LogError.flush();
-		Sleep(5000);
+		//LogError.flush();
+		Log.write("log flush done, event count: %d", dispatcher.getEventCount());
+		Sleep(2500);
 	}
 
 }
 
 int main(void) {
 	system("pause");
+	Log.write("start.");
 	SocketLibrary::load();
 	deployIndexer();
 	SocketLibrary::unload();
