@@ -605,7 +605,7 @@ public:
 
 void deployIndexer(const string & host) {
 	Indexer indexer(host);
-	EventDispatcher<ArgItem> dispatcher(16);
+	EventDispatcher<ArgItem> dispatcher(32);
 	dispatcher.setStatus(EventDispatcher<ArgItem>::Status::SUSPEND);
 	Log.write("event dispatcher init success");
 
