@@ -19,14 +19,14 @@ public:
 int main(void){
 	//IOCPModule m;
 	//m.run();
-	/*Server::ServerInfo info;
+	Server::ServerInfo info;
 	info.port = 6001;
 	info.instanceName = "server";
 	Server svr(info);
 	svr.init();
-	svr.run();*/
+	svr.run();
 
-	EventDispatcher<std::string> ed(4);
+	/*EventDispatcher<std::string> ed(4);
 	CallbackEx cb;
 
 	ed.addCallback("test", &cb);
@@ -35,7 +35,7 @@ int main(void){
 
 	while (true) {
 		Sleep(10000);
-	}
+	}*/
 
 	return 0;
 }
