@@ -67,4 +67,6 @@ Temporary Items
 *.tli
 *.enc
 /.vs/config/applicationhost.config
+*.dll
+*.pdb
 
