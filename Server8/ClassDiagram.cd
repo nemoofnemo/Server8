@@ -1,0 +1,116 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1">
+  <Class Name="svrutil::Timer" Collapsed="true">
+    <Position X="0.5" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAFACAAAAAAAAAiAkAQAAAAAAAgAAAEAAAAAEAEAAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::LogModule" Collapsed="true">
+    <Position X="5.75" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQAQAAAEAAAQAAAAAAAAABCAAEAAEAAAQhgACADAAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::CriticalSection" Collapsed="true">
+    <Position X="0.5" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAgIAIAAEAAAAAAAAAAAAAAAAAAAAAIBBABggUAACAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::SRWLock" Collapsed="true">
+    <Position X="2.25" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACQAAAAEAAQAAAEAAIAAAAAAAAAAAEAAIAkAAAAAAI=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::RandomString" Collapsed="true">
+    <Position X="2.25" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::ThreadPool">
+    <Position X="5.75" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BIAAQACCACAgCACAAAJAAAAAEgoCAAAAAABEAMAAAAI=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::MD5" Collapsed="true">
+    <Position X="0.5" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::SystemInfo" Collapsed="true">
+    <Position X="4" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AIAAAAAAAEAAAgAAAAAAAAAAAAAAAAAAAAACAAAAAAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::TimeStamp" Collapsed="true">
+    <Position X="2.25" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::SocketLibrary" Collapsed="true">
+    <Position X="5.75" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AIAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::GetHostByName" Collapsed="true">
+    <Position X="4" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAIBAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::Zlib" Collapsed="true">
+    <Position X="4" Y="3.5" Width="1.5" />
+    <NestedTypes>
+      <Enum Name="svrutil::Zlib::__unnamed_enum_0008_1" Collapsed="true">
+        <TypeIdentifier>
+          <NewMemberFileName>svrutil.h</NewMemberFileName>
+        </TypeIdentifier>
+      </Enum>
+    </NestedTypes>
+    <TypeIdentifier>
+      <HashCode>BAQAgAAAASAAQAAAAAAAAAAEAAAAAAAABAAAAAAAAAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::RegexEx" Collapsed="true">
+    <Position X="4" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::SQLServerADO" Collapsed="true">
+    <Position X="0.5" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAACAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAQABgA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="svrutil::EventDispatcher&lt;ArgType&gt;" Collapsed="true">
+    <Position X="2.25" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gAQAAAQIEAAAhiAAIEAACIAAAAAAAEACAABgAAIAAAA=</HashCode>
+      <FileName>svrutil.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Font Name="Microsoft YaHei UI" Size="9" />
+</ClassDiagram>

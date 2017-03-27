@@ -91,6 +91,7 @@
     <None Include="..\..\..\..\..\Windows\Desktop\zlib-1.2.3.tar.gz" />
     <None Include="..\README.md" />
     <None Include="..\Server8.vsdx" />
+    <None Include="ClassDiagram.cd" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="reverse.txt" />

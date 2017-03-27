@@ -70,3 +70,5 @@ Temporary Items
 *.dll
 *.pdb
 
+*.lastcodeanalysissucceeded
+*.xml
