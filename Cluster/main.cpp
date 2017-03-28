@@ -1,40 +1,109 @@
-#include <stdio.h>
+#include <sys/types.h>
+#include <event2/event-config.h>
+#include <sys/stat.h>
+
+#ifndef WIN32
+#include <sys/queue.h>
+#include <unistd.h>
+#endif
+
+#include <time.h>
+
+#ifdef _EVENT_HAVE_SYS_TIME_H
+#include <sys/time.h>
+#endif
+
+#include <fcntl.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <errno.h>
-#include <assert.h>
-
 #include <event2/event.h>
-#include <event2/bufferevent.h>
+#include <event2/event_struct.h>
+#include <event2/util.h>
 
-#define LISTEN_PORT 9999
-#define LISTEN_BACKLOG 32
+#ifdef WIN32
+#include <winsock2.h>
+#endif
 
-int main(int argc, char *argv[])
+struct timeval lasttime;
+int event_is_persistent;
+
+static void timeout_cb(evutil_socket_t fd, short event, void *arg)
 {
-	evutil_socket_t listener;
-	listener = socket(AF_INET, SOCK_STREAM, 0);
-	assert(listener > 0);
-	evutil_make_listen_socket_reuseable(listener);
+	struct timeval newtime, difference;
+	struct event *timeout = (struct event *)arg;
+	double elapsed;
 
-	struct sockaddr_in sin;
-	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = 0;
-	sin.sin_port = htons(LISTEN_PORT);
 
-	if (bind(listener, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-		perror("bind");
-		return 1;
+	evutil_gettimeofday(&newtime, NULL);
+	evutil_timersub(&newtime, &lasttime, &difference);
+	elapsed = difference.tv_sec +
+		(difference.tv_usec / 1.0e6);
+
+
+	printf("timeout_cb called at %d: %.3f seconds elapsed.\n",
+		(int)newtime.tv_sec, elapsed);
+	lasttime = newtime;
+
+
+	if (!event_is_persistent) {
+		struct timeval tv;
+		evutil_timerclear(&tv);
+		tv.tv_sec = 2;
+		event_add(timeout, &tv);
+	}
+}
+
+
+int main(int argc, char **argv)
+{
+	struct event timeout;
+	struct timeval tv;
+	struct event_base *base;
+	int flags;
+
+
+#ifdef WIN32
+	WORD wVersionRequested;
+	WSADATA wsaData;
+
+
+	wVersionRequested = MAKEWORD(2, 2);
+
+
+	(void)WSAStartup(wVersionRequested, &wsaData);
+#endif
+
+
+	if (argc == 2 && !strcmp(argv[1], "-p")) {
+		event_is_persistent = 1;
+		flags = EV_PERSIST;
+	}
+	else {
+		event_is_persistent = 0;
+		flags = 0;
 	}
 
-	if (listen(listener, LISTEN_BACKLOG) < 0) {
-		perror("listen");
-		return 1;
-	}
 
-	printf("Listening...\n");
+	/* Initalize the event library */
+	base = event_base_new();
 
-	evutil_make_socket_nonblocking(listener);
-	//....
 
-	return 0;
+	/* Initalize one event */
+	event_assign(&timeout, base, -1, flags, timeout_cb, (void*)&timeout);
+
+
+	evutil_timerclear(&tv);
+	tv.tv_sec = 2;
+	event_add(&timeout, &tv);
+
+
+	evutil_gettimeofday(&lasttime, NULL);
+
+
+	event_base_dispatch(base);
+
+
+	return (0);
 }

@@ -72,3 +72,4 @@ Temporary Items
 
 *.lastcodeanalysissucceeded
 *.xml
+/libevent
