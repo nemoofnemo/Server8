@@ -101,22 +101,16 @@ listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
 	}
 	bufferevent_setcb(bev, NULL, conn_writecb, conn_eventcb, NULL);
 	bufferevent_setcb(bev, NULL, conn_readcb, conn_eventcb, NULL);
-	bufferevent_enable(bev, EV_WRITE);
+	//bufferevent_enable(bev, EV_WRITE);
 	bufferevent_enable(bev, EV_READ);
 }
 
 static void conn_readcb(struct bufferevent * bev, void * user_data) {
 	struct evbuffer *input = bufferevent_get_input(bev);
-	if (evbuffer_get_length(input) == 0) {
-		printf("flushed answer\n");
-		bufferevent_free(bev);
-	}
-	else {
-		char str[256] = { 0 };
-		bufferevent_read(bev, str, 256);
-		puts(str);
-		bufferevent_write(bev, MESSAGE, strlen(MESSAGE));
-	}
+	char str[256] = { 0 };
+	bufferevent_read(bev, str, 256);
+	puts(str);
+	bufferevent_write(bev, MESSAGE, strlen(MESSAGE));
 }
 
 static void
@@ -126,6 +120,9 @@ conn_writecb(struct bufferevent *bev, void *user_data)
 	if (evbuffer_get_length(output) == 0) {
 		printf("flushed answer\n");
 		bufferevent_free(bev);
+	}
+	else {
+		puts("xxxx");
 	}
 }
 
