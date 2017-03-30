@@ -98,11 +98,9 @@ listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
 		fprintf(stderr, "Error constructing bufferevent!");
 		event_base_loopbreak(base);
 		return;
-	}
-	bufferevent_setcb(bev, NULL, conn_writecb, conn_eventcb, NULL);
-	bufferevent_setcb(bev, NULL, conn_readcb, conn_eventcb, NULL);
-	//bufferevent_enable(bev, EV_WRITE);
-	bufferevent_enable(bev, EV_READ);
+	}	
+	bufferevent_setcb(bev, conn_readcb, conn_writecb, conn_eventcb, NULL);
+	bufferevent_enable(bev, EV_WRITE | EV_READ | EV_PERSIST);
 }
 
 static void conn_readcb(struct bufferevent * bev, void * user_data) {
